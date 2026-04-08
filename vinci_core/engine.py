@@ -1,5 +1,7 @@
 from vinci_core.routing.model_router import ModelRouter
 from vinci_core.schemas import AIRequest, AIResponse
+from vinci_core.safety.guardrails import SafetyGuardrails
+import time
 import time
 
 
@@ -27,6 +29,27 @@ class VinciEngine:
         
         fallback_used = False
         failure_reason = None
+        safety_metadata = {}
+
+        # 1. Input Guardrails
+        prompt = context.get("prompt", "")
+        is_safe_input, safe_prompt_msg, in_safety_meta = SafetyGuardrails.validate_input(prompt)
+        safety_metadata.update(in_safety_meta)
+
+        if not is_safe_input:
+            latency_ms = int((time.time() - start_time) * 1000)
+            return AIResponse(
+                model="guardrails",
+                content=safe_prompt_msg,
+                usage={},
+                metadata={
+                    "provider": "safety_layer",
+                    "latency_ms": latency_ms,
+                    "fallback_used": False,
+                    "failure_reason": "input_validation_failed",
+                    **safety_metadata
+                }
+            )
 
         try:
             result = await model.generate(context)
@@ -48,16 +71,22 @@ class VinciEngine:
         
         latency_ms = int((time.time() - start_time) * 1000)
 
+        # 2. Output Guardrails
+        raw_content = self._extract_content(result)
+        is_safe_output, final_content, out_safety_meta = SafetyGuardrails.validate_output(raw_content)
+        safety_metadata.update(out_safety_meta)
+
         # Normalize response
         return AIResponse(
             model=self._detect_model_name(result, model),
-            content=self._extract_content(result),
+            content=final_content,
             usage=result.get("usage", {}),
             metadata={
                 "provider": model.__class__.__name__,
                 "latency_ms": latency_ms,
                 "fallback_used": fallback_used,
-                "failure_reason": failure_reason
+                "failure_reason": failure_reason,
+                **safety_metadata
             }
         )
 
