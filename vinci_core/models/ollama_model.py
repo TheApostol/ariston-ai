@@ -1,4 +1,5 @@
 import httpx
+from typing import Any
 from vinci_core.models.base_model import BaseModel
 
 class OllamaModel(BaseModel):
@@ -25,8 +26,10 @@ class OllamaModel(BaseModel):
             except Exception as e:
                 raise Exception(f"Ollama execution failed: {str(e)}")
 
-    def train(self, data):
+    def train(self, data: Any):
+        """Not implemented for local inference proxy"""
         pass
 
-    def predict(self, input_data):
+    def predict(self, input_data: Any) -> Any:
+        """Not implemented for local inference proxy"""
         pass

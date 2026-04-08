@@ -40,11 +40,13 @@ class ConsensusModel(BaseModel):
         final_res = await self.arbiter.generate(synth_context)
         return final_res
 
-    def _extract(self, result: dict) -> str:
+    def _extract(self, result: dict | str) -> str:
+        if isinstance(result, str):
+            return result
+        if "content" in result and isinstance(result["content"], str):
+            return result["content"]
         if "choices" in result:
             return result["choices"][0]["message"]["content"]
-        if "content" in result and isinstance(result["content"], list):
-            return result["content"][0].get("text", "")
         if "candidates" in result:
             return result["candidates"][0]["content"]["parts"][0]["text"]
         return str(result)
