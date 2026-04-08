@@ -2,6 +2,7 @@ from vinci_core.routing.model_router import ModelRouter
 from vinci_core.schemas import AIRequest, AIResponse
 from vinci_core.safety.guardrails import SafetyGuardrails
 from vinci_core.tools.medical_tools import MedicalTools
+from vinci_core.evaluation.benchmark_logger import BenchmarkLogger
 import time
 import time
 
@@ -95,18 +96,23 @@ class VinciEngine:
         is_safe_output, final_content, out_safety_meta = SafetyGuardrails.validate_output(raw_content)
         safety_metadata.update(out_safety_meta)
 
-        # Normalize response
+        # Normalize response metadata
+        final_meta = {
+            "provider": model.__class__.__name__,
+            "latency_ms": latency_ms,
+            "fallback_used": fallback_used,
+            "failure_reason": failure_reason,
+            **safety_metadata
+        }
+
+        # 3. MedPerf Benchmarking
+        BenchmarkLogger.evaluate_and_log(context, final_meta, final_content)
+
         return AIResponse(
             model=self._detect_model_name(result, model),
             content=final_content,
             usage=result.get("usage", {}),
-            metadata={
-                "provider": model.__class__.__name__,
-                "latency_ms": latency_ms,
-                "fallback_used": fallback_used,
-                "failure_reason": failure_reason,
-                **safety_metadata
-            }
+            metadata=final_meta
         )
 
     def _extract_content(self, result: dict) -> str:

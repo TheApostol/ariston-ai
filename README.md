@@ -6,6 +6,10 @@ Contains the codebase for a multi-layered, multi-agent AI system.
 - **Dynamic Routing**: Selects optimal models per domain (clinical vs general data).
 - **Fallback Recovery**: Fails gracefully if OpenRouter/Gemini dies.
 - **Clinical Safety Layer**: Prevents definitive medical diagnoses.
+- **Medley-Style Consensus (New)**: Parallel dual-model generation with arbiter synthesis.
+- **Isaree-Style Pipelines (New)**: Multi-step inference pipelines for structured evaluation.
+- **Copilot Grounding (New)**: Real-time queries to PubMed & API RxNorm for factual context.
+- **MedPerf Benchmarking (New)**: Autonomous MLCommons-style benchmarking and observability scoring.
 
 ## Demo / Quickstart
 
