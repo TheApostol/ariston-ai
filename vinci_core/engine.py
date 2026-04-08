@@ -1,6 +1,7 @@
 from vinci_core.routing.model_router import ModelRouter
 from vinci_core.schemas import AIRequest, AIResponse
 from vinci_core.safety.guardrails import SafetyGuardrails
+from vinci_core.tools.medical_tools import MedicalTools
 import time
 import time
 
@@ -50,6 +51,24 @@ class VinciEngine:
                     **safety_metadata
                 }
             )
+
+        # 1.5 Tool Retrieval (Copilot)
+        try:
+            if layer == "pharma":
+                # Naive drug extraction from prompt
+                words = prompt.split()
+                if words:
+                    classes = await MedicalTools.get_drug_classes(words[0])
+                    if classes and classes[0] != "Unknown drug or no RxCUI found.":
+                        context["prompt"] = f"[RxNorm Classes: {classes}]\n\n{context['prompt']}"
+            elif layer == "clinical":
+                pubmed_results = await MedicalTools.search_pubmed(prompt[:60])
+                if pubmed_results:
+                    # Format evidence compactly
+                    evidence = [f"{r['title']} ({r['source']})" for r in pubmed_results]
+                    context["prompt"] = f"[PubMed Evidence: {evidence}]\n\n{context['prompt']}"
+        except Exception as e:
+            print(f"Tool retrieval failed softly: {e}")
 
         try:
             result = await model.generate(context)
