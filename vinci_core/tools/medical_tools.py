@@ -34,9 +34,9 @@ class MedicalTools:
                     meta = summary_data.get("result", {}).get(uid, {})
                     if meta:
                         results.append({
-                            "title": meta.get("title", ""),
-                            "source": meta.get("source", ""),
-                            "pubdate": meta.get("pubdate", ""),
+                            "title": str(meta.get("title", "")),
+                            "source": str(meta.get("source", "")),
+                            "pubdate": str(meta.get("pubdate", "")),
                             "link": f"https://pubmed.ncbi.nlm.nih.gov/{uid}/"
                         })
                 return results
@@ -44,6 +44,7 @@ class MedicalTools:
             except Exception as e:
                 print(f"PubMed Tool Error: {e}")
                 return []
+        return []
 
     @staticmethod
     async def get_drug_classes(drug_name: str) -> List[str]:
@@ -71,9 +72,13 @@ class MedicalTools:
                 
                 classes = []
                 for concept in c_data.get("rxclassDrugInfoList", {}).get("rxclassDrugInfo", []):
-                    classes.append(concept.get("rxclassMinConceptItem", {}).get("className", ""))
+                    classes.append(str(concept.get("rxclassMinConceptItem", {}).get("className", "")))
                 
-                return list(set(classes))[:5]
+                unique_classes = list(set(classes))
+                if len(unique_classes) > 5:
+                    return unique_classes[:5]
+                return unique_classes
             except Exception as e:
                 print(f"RxNorm Tool Error: {e}")
                 return []
+        return []
