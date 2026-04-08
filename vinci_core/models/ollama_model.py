@@ -24,3 +24,9 @@ class OllamaModel(BaseModel):
                 return {"content": data.get("response", "")}
             except Exception as e:
                 raise Exception(f"Ollama execution failed: {str(e)}")
+
+    def train(self, data):
+        pass
+
+    def predict(self, input_data):
+        pass

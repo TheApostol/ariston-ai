@@ -9,6 +9,11 @@ class IntentClassifier:
         self.brain = OpenRouterModel()
 
     async def classify(self, prompt: str) -> str:
+        # Heuristic 1: Vision keywords
+        prompt_lower = prompt.lower()
+        if any(w in prompt_lower for w in ["x-ray", "mri", "image", "scan", "radiograph"]):
+            return "radiology"
+            
         system_prompt = (
             "You are the root orchestrator of a medical AI system. Classify the user's prompt into exactly one of these categories:\n"
             "1. 'clinical' - symptoms, diagnosis, patient care, diseases.\n"

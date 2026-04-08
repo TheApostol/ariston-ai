@@ -109,8 +109,8 @@ class VinciEngine:
                 scan_content = await VisionRadiologyAgent.analyze_scan(input_prompt)
                 result = {"content": scan_content, "model": "VisionRadiology"}
             elif layer == "clinical":
-                from vinci_core.routing.consensus_router import ConsensusRouter
-                scan_content = await ConsensusRouter.run_consensus(input_prompt)
+                from vinci_core.routing.consensus_router import ConsensusModel
+                scan_content = await ConsensusModel().generate(context)
                 result = {"content": scan_content, "model": "dual_consensus_arbiter"}
             else:
                 result = await self._execute_model(model, context)
