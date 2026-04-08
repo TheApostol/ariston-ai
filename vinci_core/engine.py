@@ -5,6 +5,7 @@ from vinci_core.tools.medical_tools import MedicalTools
 from vinci_core.evaluation.benchmark_logger import BenchmarkLogger
 from vinci_core.agent.classifier import IntentClassifier
 from vinci_core.middleware.retry import with_retry
+from vinci_core.logger import vinci_logger
 import time
 import time
 
@@ -92,7 +93,7 @@ class VinciEngine:
                     evidence = [f"{r['title']} ({r['source']})" for r in pubmed_results]
                     context["prompt"] = f"[PubMed Evidence: {evidence}]\n\n{context['prompt']}"
         except Exception as e:
-            print(f"Tool retrieval failed softly: {e}")
+            vinci_logger.warning(f"Tool retrieval failed softly: {e}")
 
         try:
             result = await self._execute_model(model, context)
@@ -139,7 +140,7 @@ class VinciEngine:
 
         # If safety or grounding is poor, retry internally!
         if (metrics.get("safety_score", 1.0) < 1.0 or metrics.get("grounding_score", 1.0) < 0.8) and current_retry < max_retries:
-            print(f"🧠 [Own AI] Reflection triggered (Retry {current_retry + 1}): low benchmark score detected! Self-correcting...")
+            vinci_logger.info(f"🧠 [Own AI] Reflection triggered (Retry {current_retry + 1}): low benchmark score detected! Self-correcting...")
             context["_retry_count"] = current_retry + 1
             
             # Construct a self-reflection prompt
