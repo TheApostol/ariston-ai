@@ -1,5 +1,6 @@
 from vinci_core.routing.model_router import ModelRouter
 from vinci_core.schemas import AIRequest, AIResponse
+import time
 
 
 class VinciEngine:
@@ -22,28 +23,42 @@ class VinciEngine:
 
         # Select model
         model = self.router.select_model(layer=layer, context=context)
+        start_time = time.time()
+        
+        fallback_used = False
+        failure_reason = None
 
         try:
             result = await model.generate(context)
 
         except Exception as e:
-            print(f"⚠️ Primary model failed: {str(e)}")
+            failure_reason = str(e)
+            print(f"⚠️ Primary model failed: {failure_reason}")
 
             # 🔁 Fallback logic
             fallback = self.router.get_fallback_model(model)
 
             if fallback:
+                fallback_used = True
                 print(f"🔁 Using fallback: {fallback.__class__.__name__}")
+                model = fallback  # Update model reference for metadata
                 result = await fallback.generate(context)
             else:
                 raise e
+        
+        latency_ms = int((time.time() - start_time) * 1000)
 
         # Normalize response
         return AIResponse(
             model=self._detect_model_name(result, model),
             content=self._extract_content(result),
             usage=result.get("usage", {}),
-            metadata={"provider": model.__class__.__name__}
+            metadata={
+                "provider": model.__class__.__name__,
+                "latency_ms": latency_ms,
+                "fallback_used": fallback_used,
+                "failure_reason": failure_reason
+            }
         )
 
     def _extract_content(self, result: dict) -> str:
