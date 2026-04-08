@@ -6,6 +6,7 @@ from vinci_core.evaluation.benchmark_logger import BenchmarkLogger
 from vinci_core.agent.classifier import IntentClassifier
 from vinci_core.middleware.retry import with_retry
 from vinci_core.logger import vinci_logger
+from vinci_core.metrics import REQUEST_COUNT, REQUEST_LATENCY, FALLBACK_COUNT
 import time
 import time
 
@@ -160,6 +161,14 @@ class VinciEngine:
                 context=context
             )
             return await self.run(retry_request)
+
+        # 📊 Prometheus Observability
+        latency_seconds = latency_ms / 1000.0
+        provider_name = final_meta.get("provider", "Unknown")
+        REQUEST_LATENCY.labels(model_name=provider_name).observe(latency_seconds)
+        REQUEST_COUNT.labels(model_name=provider_name, layer=layer).inc()
+        if fallback_used:
+            FALLBACK_COUNT.inc()
 
         # Save successful turn into memory
         if not context.get("_retry_count"):
