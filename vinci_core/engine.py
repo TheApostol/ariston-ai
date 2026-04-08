@@ -45,6 +45,16 @@ class VinciEngine:
         failure_reason = None
         safety_metadata = {}
 
+        # 🧠 Short-term Memory Injection
+        history = context.get("history", [])
+        if "history" not in context:
+            context["history"] = history
+        if not context.get("_retry_count"): # Only append if not reflecting
+            history.append({"role": "user", "content": prompt})
+            
+        if len(history) > 1 and not context.get("_retry_count"):
+            context["prompt"] = f"[Memory Summary of Past Turns: {history[:-1]}]\n\n{context['prompt']}"
+
         # 1. Input Guardrails
         prompt = context.get("prompt", "")
         is_safe_input, safe_prompt_msg, in_safety_meta = SafetyGuardrails.validate_input(prompt)
@@ -114,11 +124,44 @@ class VinciEngine:
             "latency_ms": latency_ms,
             "fallback_used": fallback_used,
             "failure_reason": failure_reason,
+            "history": history,
             **safety_metadata
         }
 
         # 3. MedPerf Benchmarking
         BenchmarkLogger.evaluate_and_log(context, final_meta, final_content)
+
+        # 🧠 "Own AI" Self-Reflection Loop
+        metrics = final_meta.get("benchmark_metrics", {})
+        max_retries = 1
+        current_retry = context.get("_retry_count", 0)
+
+        # If safety or grounding is poor, retry internally!
+        if (metrics.get("safety_score", 1.0) < 1.0 or metrics.get("grounding_score", 1.0) < 0.8) and current_retry < max_retries:
+            print(f"🧠 [Own AI] Reflection triggered (Retry {current_retry + 1}): low benchmark score detected! Self-correcting...")
+            context["_retry_count"] = current_retry + 1
+            
+            # Construct a self-reflection prompt
+            reflection_prompt = (
+                f"Your previous response was flagged internally by the system guardrails.\n"
+                f"It either violated medical safety guidelines (e.g. gave a definitive diagnosis) "
+                f"or lacked explicit grounding in the provided tools/evidence.\n\n"
+                f"Previous Response:\n{final_content}\n\n"
+                f"Original Task Context:\n{prompt}\n\n"
+                f"Reflect on the errors and provide a strictly compliant, well-hedged response."
+            )
+            
+            # Recurse
+            retry_request = AIRequest(
+                prompt=reflection_prompt,
+                model=request.model,
+                context=context
+            )
+            return await self.run(retry_request)
+
+        # Save successful turn into memory
+        if not context.get("_retry_count"):
+            history.append({"role": "assistant", "content": final_content})
 
         return AIResponse(
             model=self._detect_model_name(result, model),

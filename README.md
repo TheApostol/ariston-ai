@@ -10,6 +10,8 @@ Contains the codebase for a multi-layered, multi-agent AI system.
 - **Isaree-Style Pipelines (New)**: Multi-step inference pipelines for structured evaluation.
 - **Copilot Grounding (New)**: Real-time queries to PubMed & API RxNorm for factual context.
 - **MedPerf Benchmarking (New)**: Autonomous MLCommons-style benchmarking and observability scoring.
+- **Autonomous Intent Routing (Own AI)**: Evaluates user prompts to auto-select optimal pipelines.
+- **Self-Reflective Loops (Own AI)**: Automatically attempts to self-correct low scoring or unsafe benchmark logs.
 
 ## Demo / Quickstart
 
