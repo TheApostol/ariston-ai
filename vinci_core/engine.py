@@ -135,7 +135,10 @@ class VinciEngine:
         BenchmarkLogger.evaluate_and_log(context, final_meta, final_content)
 
         # 🧠 "Own AI" Self-Reflection Loop
-        metrics = final_meta.get("benchmark_metrics", {})
+        metrics = final_meta.get("benchmark_metrics")
+        if not isinstance(metrics, dict):
+            metrics = {}
+            
         max_retries = 1
         current_retry = context.get("_retry_count", 0)
 

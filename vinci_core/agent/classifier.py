@@ -24,10 +24,13 @@ class IntentClassifier:
             
             # Extract content manually
             content = ""
-            if "choices" in result:
-                content = result["choices"][0]["message"]["content"]
-            elif "candidates" in result:
-                content = result["candidates"][0]["content"]["parts"][0]["text"]
+            if isinstance(result, dict):
+                if "choices" in result:
+                    content = result["choices"][0]["message"]["content"]
+                elif "candidates" in result:
+                    content = result["candidates"][0]["content"]["parts"][0]["text"]
+                else:
+                    content = str(result)
             else:
                 content = str(result)
                 
