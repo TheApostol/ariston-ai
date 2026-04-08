@@ -2,20 +2,24 @@ from abc import ABC, abstractmethod
 
 class BaseModel(ABC):
     """
-    Abstract base class for all AI models.
+    Abstract base class for all Ariston AI models.
+    Ensures consistent interface for generation and optional training/evaluation.
     """
-
+    
     @abstractmethod
+    async def generate(self, context: dict) -> dict:
+        """Core generation interface used by the orchestrator."""
+        return {"content": "", "model": "base"}
+
+    # Machine Learning Lifecycle Methods (Optional)
     def train(self, data):
-        """Train the model with the given data."""
+        """Optional training method."""
         pass
 
-    @abstractmethod
     def predict(self, input_data):
-        """Make predictions using the trained model."""
+        """Optional prediction method."""
         pass
 
-    @abstractmethod
     def evaluate(self, test_data):
-        """Evaluate the model's performance on the test data."""
+        """Optional evaluation method."""
         pass

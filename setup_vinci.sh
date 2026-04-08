@@ -20,8 +20,7 @@ mkdir -p vinci_core/middleware
 # Initialize packages
 find vinci_core -type d -exec touch {}/__init__.py \;
 
-echo "📦 Creating model skeletons..."
-# Ensure all managed models are present
+echo "📦 Ensuring core models..."
 touch vinci_core/models/base_model.py
 touch vinci_core/models/openai_model.py
 touch vinci_core/models/anthropic_model.py
@@ -29,11 +28,11 @@ touch vinci_core/models/gemini_model.py
 touch vinci_core/models/ollama_model.py
 touch vinci_core/models/openrouter_model.py
 
-echo "🧠 Initializing routing layer..."
+echo "🧠 Ensuring routing layer..."
 touch vinci_core/routing/model_router.py
 touch vinci_core/routing/consensus_router.py
 
-echo "🛡️  Setting up safety & eval..."
+echo "🛡️  Ensuring safety & eval..."
 touch vinci_core/safety/guardrails.py
 touch vinci_core/evaluation/benchmark_logger.py
 
