@@ -1,6 +1,7 @@
 from vinci_core.models.openrouter_model import OpenRouterModel
 from vinci_core.models.anthropic_model import AnthropicModel
 from vinci_core.models.gemini_model import GeminiModel
+from vinci_core.routing.consensus_router import ConsensusModel
 
 
 class ModelRouter:
@@ -8,13 +9,14 @@ class ModelRouter:
         self.openrouter = OpenRouterModel()
         self.anthropic = AnthropicModel()
         self.gemini = GeminiModel()
+        self.consensus = ConsensusModel()
 
     def select_model(self, layer: str, context: dict):
 
         # PRIORITY: free / available models first
 
         if layer == "clinical":
-            return self.anthropic
+            return self.consensus
 
         if layer == "pharma":
             return self.anthropic
