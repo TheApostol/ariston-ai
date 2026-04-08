@@ -7,7 +7,7 @@ from vinci_core.agent.classifier import IntentClassifier
 from vinci_core.middleware.retry import with_retry
 from vinci_core.logger import vinci_logger
 from vinci_core.metrics import REQUEST_COUNT, REQUEST_LATENCY, FALLBACK_COUNT
-import time
+from vinci_core.database.vector_store import VectorMemoryDB
 import time
 
 
@@ -15,6 +15,7 @@ class VinciEngine:
     def __init__(self):
         self.router = ModelRouter()
         self.classifier = IntentClassifier()
+        self.memory_db = VectorMemoryDB()
 
         # ✅ REQUIRED for /models endpoint
         self.available_models = [
@@ -24,8 +25,14 @@ class VinciEngine:
         ]
 
     async def run(self, request: AIRequest) -> AIResponse:
+        # Inject long-term conversational RAG back into the active prompt
+        past_context = self.memory_db.get_recent_context()
+        if past_context:
+            request.prompt = f"{past_context}\\n[NEW QUERY]\\n{request.prompt}"
+
         # ✅ Convert Pydantic → dict (fixes serialization bug)
         context = request.model_dump()
+        input_prompt = request.prompt
 
         # Default layer extraction (handle Pydantic nesting)
         user_context = context.get("context") or {}
@@ -97,7 +104,16 @@ class VinciEngine:
             vinci_logger.warning(f"Tool retrieval failed softly: {e}")
 
         try:
-            result = await self._execute_model(model, context)
+            if layer == "radiology":
+                from vinci_core.agent.vision_agent import VisionRadiologyAgent
+                scan_content = await VisionRadiologyAgent.analyze_scan(input_prompt)
+                result = {"content": scan_content, "model": "VisionRadiology"}
+            elif layer == "clinical":
+                from vinci_core.routing.consensus_router import ConsensusRouter
+                scan_content = await ConsensusRouter.run_consensus(input_prompt)
+                result = {"content": scan_content, "model": "dual_consensus_arbiter"}
+            else:
+                result = await self._execute_model(model, context)
 
         except Exception as e:
             failure_reason = str(e)
@@ -176,6 +192,10 @@ class VinciEngine:
         # Save successful turn into memory
         if not context.get("_retry_count"):
             history.append({"role": "assistant", "content": final_content})
+            context["history"] = history
+            
+            # Save to permanent Vector RAG
+            self.memory_db.log_memory(input_prompt, final_content)
 
         return AIResponse(
             model=self._detect_model_name(result, model),
@@ -184,10 +204,12 @@ class VinciEngine:
             metadata=final_meta
         )
 
-    def _extract_content(self, result: dict) -> str:
+    def _extract_content(self, result: dict | str) -> str:
         """
         Normalize responses across providers
         """
+        if isinstance(result, str):
+            return result
 
         # OpenRouter / OpenAI-style
         if "choices" in result:
@@ -204,11 +226,11 @@ class VinciEngine:
         # Fallback
         return str(result)
 
-    def _detect_model_name(self, result: dict, model) -> str:
+    def _detect_model_name(self, result: dict | str, model) -> str:
         """
         Try to extract model name cleanly
         """
-        if "model" in result:
+        if isinstance(result, dict) and "model" in result:
             return result["model"]
 
         return model.__class__.__name__

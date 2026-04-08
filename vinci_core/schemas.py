@@ -1,10 +1,21 @@
 from pydantic import BaseModel, Field
 from typing import Any, Literal
 
+class FHIRResource(BaseModel):
+    resourceType: str
+    id: str | None = None
+    
+class FHIRObservation(FHIRResource):
+    status: str
+    code: dict[str, Any]
+    valueQuantity: dict[str, Any] | None = None
+    valueString: str | None = None
+
 class AIRequest(BaseModel):
     prompt: str = Field(..., description="The user's query or prompt.")
     model: str | None = Field(default=None, description="Optional forced model override.")
     context: dict[str, Any] | None = Field(default_factory=dict, description="Metadata and history context.")
+    fhir_bundle: list[dict[str, Any]] | None = Field(default=None, description="Optional raw FHIR API inputs")
     stream: bool = False
 
 class ClinicalRequest(AIRequest):

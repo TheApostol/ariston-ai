@@ -1,6 +1,6 @@
 import httpx
 import urllib.parse
-from typing import Dict, Any, List
+from typing import Dict, List
 
 class MedicalTools:
     """
@@ -76,7 +76,7 @@ class MedicalTools:
                 
                 unique_classes = list(set(classes))
                 if len(unique_classes) > 5:
-                    return unique_classes[:5]
+                    return unique_classes[:5]  # pyre-ignore
                 return unique_classes
             except Exception as e:
                 print(f"RxNorm Tool Error: {e}")
