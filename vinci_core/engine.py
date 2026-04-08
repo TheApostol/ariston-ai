@@ -3,6 +3,7 @@ from vinci_core.schemas import AIRequest, AIResponse
 from vinci_core.safety.guardrails import SafetyGuardrails
 from vinci_core.tools.medical_tools import MedicalTools
 from vinci_core.evaluation.benchmark_logger import BenchmarkLogger
+from vinci_core.agent.classifier import IntentClassifier
 import time
 import time
 
@@ -10,6 +11,7 @@ import time
 class VinciEngine:
     def __init__(self):
         self.router = ModelRouter()
+        self.classifier = IntentClassifier()
 
         # ✅ REQUIRED for /models endpoint
         self.available_models = [
@@ -22,8 +24,18 @@ class VinciEngine:
         # ✅ Convert Pydantic → dict (fixes serialization bug)
         context = request.model_dump()
 
-        # Default layer
-        layer = context.get("layer", "general")
+        # Default layer extraction (handle Pydantic nesting)
+        user_context = context.get("context") or {}
+        layer = user_context.get("layer")
+
+        # 🧠 "Own AI" Autonomous Routing
+        prompt = context.get("prompt", "")
+        if not layer:
+            layer = await self.classifier.classify(prompt)
+            # Inject it so plugins know
+            context["layer"] = layer
+        else:
+            context["layer"] = layer # standardize flat access for downstream
 
         # Select model
         model = self.router.select_model(layer=layer, context=context)
