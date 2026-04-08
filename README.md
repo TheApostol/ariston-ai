@@ -1,4 +1,6 @@
-# Vinci Multi-System Orchestration
+# Ariston AI 🧬
+
+![Ariston AI Logo](./ariston_ai_logo.png)
 
 Contains the codebase for a multi-layered, multi-agent AI system.
 
