@@ -2,6 +2,7 @@ from vinci_core.models.openrouter_model import OpenRouterModel
 from vinci_core.models.anthropic_model import AnthropicModel
 from vinci_core.models.gemini_model import GeminiModel
 from vinci_core.routing.consensus_router import ConsensusModel
+from vinci_core.models.ollama_model import OllamaModel
 
 
 class ModelRouter:
@@ -10,8 +11,14 @@ class ModelRouter:
         self.anthropic = AnthropicModel()
         self.gemini = GeminiModel()
         self.consensus = ConsensusModel()
+        self.local_ollama = None # Lazy load due to size and dependency
 
     def select_model(self, layer: str, context: dict):
+        # Privacy-first local execution overrides all network models
+        if layer == "local":
+            if not self.local_ollama:
+                self.local_ollama = OllamaModel()
+            return self.local_ollama
 
         # PRIORITY: free / available models first
 

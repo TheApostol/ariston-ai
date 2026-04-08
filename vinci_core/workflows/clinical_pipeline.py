@@ -1,5 +1,5 @@
 from vinci_core.schemas import AIRequest, AIResponse
-import asyncio
+
 
 class ClinicalPipeline:
     """
@@ -11,6 +11,24 @@ class ClinicalPipeline:
 
     async def execute(self, request: AIRequest) -> AIResponse:
         original_prompt = request.prompt
+        
+        # Explicit FHIR Interoperability
+        fhir_context = ""
+        if request.fhir_bundle:
+            fhir_context = "FHIR Observations Context:\\n"
+            for resource in request.fhir_bundle:
+                if resource.get("resourceType") == "Observation":
+                    status = resource.get("status", "unknown")
+                    code_display = resource.get("code", {}).get("text", "Unknown code")
+                    val_q = resource.get("valueQuantity", {})
+                    val_s = resource.get("valueString", "")
+                    
+                    if val_s:
+                        fhir_context += f"- [{status.upper()}] {code_display}: {val_s}\\n"
+                    elif val_q:
+                        fhir_context += f"- [{status.upper()}] {code_display}: {val_q.get('value')} {val_q.get('unit')}\\n"
+            
+            original_prompt = f"{fhir_context}\\n\\n[NEW QUERY]\\n{original_prompt}"
         
         # Step 1: Data Extraction (uses cheaper "data" layer model)
         extraction_req = AIRequest(
