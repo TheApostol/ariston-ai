@@ -4,6 +4,7 @@ from vinci_core.safety.guardrails import SafetyGuardrails
 from vinci_core.tools.medical_tools import MedicalTools
 from vinci_core.evaluation.benchmark_logger import BenchmarkLogger
 from vinci_core.agent.classifier import IntentClassifier
+from vinci_core.middleware.retry import with_retry
 import time
 import time
 
@@ -94,7 +95,7 @@ class VinciEngine:
             print(f"Tool retrieval failed softly: {e}")
 
         try:
-            result = await model.generate(context)
+            result = await self._execute_model(model, context)
 
         except Exception as e:
             failure_reason = str(e)
@@ -199,6 +200,10 @@ class VinciEngine:
 
         return model.__class__.__name__
 
+    @with_retry(max_retries=3, base_delay=1.0)
+    async def _execute_model(self, model, context: dict) -> dict:
+        """Isolated model execution wrapped in retry middleware for transient API errors"""
+        return await model.generate(context)
 
 # ✅ Singleton instance (IMPORTANT for router import)
 engine = VinciEngine()
