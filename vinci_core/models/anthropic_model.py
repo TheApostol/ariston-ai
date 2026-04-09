@@ -1,81 +1,64 @@
-"""
-Anthropic Claude provider — normalized interface with timeout and retry.
-
-Returns: { model, content, usage, metadata }
-"""
-
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
-
 import anthropic
 from config import settings
 
-from vinci_core.models.base_model import BaseModel
-from vinci_core.utils.retry import async_retry
+logger = logging.getLogger("ariston.anthropic")
 
-logger = logging.getLogger("ariston.providers.anthropic")
-
-_DEFAULT_MODEL = "claude-sonnet-4-6"
-_MAX_TOKENS = 2048
 _TIMEOUT_SECONDS = 60
+_MAX_RETRIES = 3
+_RETRY_STATUS_CODES = {429, 502, 503, 529}
 
 
-class AnthropicModel(BaseModel):
+class AnthropicModel:
     name = "anthropic"
+    DEFAULT_MODEL = "claude-sonnet-4-6"
 
     def __init__(self):
         self.client = anthropic.AsyncAnthropic(
             api_key=settings.ANTHROPIC_API_KEY,
             timeout=_TIMEOUT_SECONDS,
+            max_retries=_MAX_RETRIES,
         )
 
-    @async_retry(max_attempts=3, base_delay=1.0, exceptions=(anthropic.APIStatusError, anthropic.APIConnectionError))
-    async def generate(
-        self,
-        messages: Optional[List[Dict[str, str]]] = None,
-        prompt: Optional[str] = None,
-        model: Optional[str] = None,
-        **kwargs: Any,
-    ) -> Dict[str, Any]:
-        """
-        Generate a completion via Anthropic Claude.
+    async def generate(self, messages: list, model: str = None) -> dict:
+        used_model = model or self.DEFAULT_MODEL
 
-        Accepts either *messages* (OpenAI-style list) or a plain *prompt* string.
-        System messages are extracted and passed via Anthropic's dedicated param.
-        """
-        if not messages and prompt:
-            messages = [{"role": "user", "content": prompt}]
-        elif not messages:
-            messages = []
-
+        # Strip system messages — Anthropic uses a separate system param
         system_parts = [m["content"] for m in messages if m["role"] == "system"]
         user_messages = [m for m in messages if m["role"] != "system"]
         system_prompt = "\n\n".join(system_parts) if system_parts else None
 
-        target_model = model or _DEFAULT_MODEL
-        kwargs_call: Dict[str, Any] = {
-            "model": target_model,
-            "max_tokens": _MAX_TOKENS,
+        kwargs = {
+            "model": used_model,
+            "max_tokens": 2048,
             "messages": user_messages,
         }
         if system_prompt:
-            kwargs_call["system"] = system_prompt
+            kwargs["system"] = system_prompt
 
-        logger.debug("[anthropic] calling model=%s messages=%d", target_model, len(user_messages))
-        response = await self.client.messages.create(**kwargs_call)
+        try:
+            response = await asyncio.wait_for(
+                self.client.messages.create(**kwargs),
+                timeout=_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.error("[Anthropic] timeout after %ds for model=%s", _TIMEOUT_SECONDS, used_model)
+            raise TimeoutError(f"Anthropic timed out after {_TIMEOUT_SECONDS}s")
 
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
 
         return {
-            "model": target_model,
+            "model": used_model,
             "content": response.content[0].text,
             "usage": {
                 "prompt_tokens": input_tokens,
                 "completion_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
             },
-            "metadata": {"provider": "anthropic"},
+            "metadata": {
+                "provider": "anthropic",
+                "stop_reason": response.stop_reason,
+            },
         }
-
