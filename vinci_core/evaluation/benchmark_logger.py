@@ -68,11 +68,19 @@ class BenchmarkLogger:
 
     @classmethod
     def _write_log(cls, entry: Dict[str, Any]):
+        # Whitelist only known-safe, non-sensitive fields before persisting.
+        safe_entry = {
+            "timestamp": entry.get("timestamp"),
+            "layer": entry.get("layer"),
+            "model": entry.get("model"),
+            "safety_flag": entry.get("safety_flag"),
+            "metrics": entry.get("metrics"),
+        }
         try:
             with open(cls.LOG_FILE, "a") as f:
-                f.write(json.dumps(entry) + "\n")
+                f.write(json.dumps(safe_entry) + "\n")
         except Exception as e:
-            print(f"[BenchmarkLogger] write failed: {e}")
+            print(f"[BenchmarkLogger] write failed: {type(e).__name__}")
 
 
 benchmark_logger = BenchmarkLogger()

@@ -21,7 +21,6 @@ from vinci_core.continuous_improvement.improvement_agent import run_improvement_
 
 logger = logging.getLogger(__name__)
 
-_SENTINEL = object()          # unique object used to detect "not set"
 
 # ── Shared loop state ─────────────────────────────────────────────────────────
 
@@ -163,4 +162,5 @@ async def run_one_cycle() -> Dict[str, Any]:
         except Exception as e:
             _state.cycles_failed += 1
             _state.last_status = "error"
-            return {"status": "error", "message": str(e)}
+            logger.error("[LoopScheduler] run_one_cycle failed: %s", type(e).__name__)
+            return {"status": "error", "message": "Improvement cycle failed. Check server logs."}

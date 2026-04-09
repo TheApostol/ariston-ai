@@ -52,8 +52,8 @@ class Engine:
         start_time = time.monotonic()
 
         logger.info(
-            '{"event":"engine_start","request_id":"%s","layer":"%s","prompt_len":%d}',
-            request_id, layer or "auto", len(prompt),
+            '{"event":"engine_start","request_id":"%s","layer":"%s"}',
+            request_id, layer or "auto",
         )
 
         try:
