@@ -1,9 +1,11 @@
 from fastapi import APIRouter
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Optional
 from .service import pharma_query
 from vinci_core.schemas import AIResponse
 from vinci_core.workflows.pharma import draft_regulatory_document, DOCUMENT_TEMPLATES
+from .pdf_export import render_pdf
 
 router = APIRouter(prefix="/pharma", tags=["Ariston Pharma — Regulatory"])
 
@@ -52,6 +54,42 @@ async def draft_document(request: DraftRequest):
         nct_id=request.nct_id,
         study_data=request.study_data,
         section=request.section,
+    )
+
+
+@router.post("/draft/pdf")
+async def draft_document_pdf(request: DraftRequest):
+    """
+    Same as /draft but returns a formatted PDF file.
+
+    Example:
+      POST /api/v1/pharma/draft/pdf
+      {
+        "document_type": "csr",
+        "drug_name": "dabrafenib",
+        "indication": "BRAF V600E metastatic melanoma",
+        "nct_id": "NCT01227889"
+      }
+
+    Returns an application/pdf download.
+    """
+    draft = await draft_regulatory_document(
+        document_type=request.document_type,
+        drug_name=request.drug_name,
+        indication=request.indication,
+        nct_id=request.nct_id,
+        study_data=request.study_data,
+        section=request.section,
+    )
+    pdf_bytes = render_pdf(draft)
+    filename = (
+        f"ariston_{request.drug_name.lower().replace(' ', '_')}"
+        f"_{request.document_type}.pdf"
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
