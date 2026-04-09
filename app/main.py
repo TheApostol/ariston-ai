@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.endpoints.orchestration import router as orchestration_router
+from app.agents.router import router as agents_router
+from vinci_core.swarm.router import router as swarm_router
+from vinci_core.continuous_improvement.router import router as improvement_router
 import logging
 
 # Configure Logging
@@ -27,6 +30,9 @@ import os
 
 # Mount API Routers
 app.include_router(orchestration_router, prefix="/api/v1", tags=["orchestration"])
+app.include_router(agents_router, prefix="/api/v1", tags=["Individual Agents"])
+app.include_router(swarm_router, prefix="/api/v1", tags=["Agent Swarm"])
+app.include_router(improvement_router, prefix="/api/v1", tags=["Autonomous Improvement Loop"])
 
 # Mount React Production Build
 static_path = os.path.join(os.path.dirname(__file__), "static")

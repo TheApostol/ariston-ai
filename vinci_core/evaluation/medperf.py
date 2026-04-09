@@ -85,12 +85,12 @@ async def _run_medqa(questions: List[Dict], engine) -> List[Dict]:
         response = await engine.run(prompt=prompt, layer="clinical", use_rag=False)
         predicted = _extract_choice(response.content)
         correct_answer = q.get("answer_idx", q.get("answer", ""))
+        is_correct = predicted.upper() == str(correct_answer).upper()
         results.append({
             "question": q.get("question", "")[:100],
             "predicted": predicted,
-            "correct": correct_answer,
-            "match": predicted.upper() == str(correct_answer).upper(),
-            "correct": predicted.upper() == str(correct_answer).upper(),
+            "correct_answer": correct_answer,
+            "correct": is_correct,
         })
     return results
 

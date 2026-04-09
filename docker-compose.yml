@@ -1,16 +1,28 @@
-version: '3.8'
-
 services:
   ariston-ai:
     build: .
+    image: ariston-ai:latest
     ports:
       - "8000:8000"
       - "9090:9090"  # Metrics port
+    env_file:
+      - .env
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - HARRISON_ENABLED=${HARRISON_ENABLED:-false}
+    volumes:
+      - ariston_data:/app/data
+      - ariston_benchmarks:/app/benchmarks
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   prometheus:
     image: prom/prometheus:latest
@@ -18,3 +30,7 @@ services:
       - "9091:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+volumes:
+  ariston_data:
+  ariston_benchmarks:
