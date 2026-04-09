@@ -35,14 +35,24 @@ class ModelRouter:
         return self.openrouter
 
     def get_fallback_model(self, failed_model):
-
+        
+        # Privacy-first local execution fallback
+        # If all cloud providers fail, we attempt to use local Ollama
+        
         if isinstance(failed_model, OpenRouterModel):
             return self.gemini
-
+            
         if isinstance(failed_model, GeminiModel):
             return self.anthropic
-
+            
         if isinstance(failed_model, AnthropicModel):
-            return None
+            # Final fallback to local inference
+            if not self.local_ollama:
+                try:
+                    self.local_ollama = OllamaModel()
+                    return self.local_ollama
+                except:
+                    return None
+            return self.local_ollama
 
         return None

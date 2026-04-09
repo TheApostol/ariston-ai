@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: ariston-ai
+Version: 0.1.0
+Summary: Production-grade clinical AI orchestration engine
+Requires-Python: >=3.14
+Requires-Dist: fastapi
+Requires-Dist: uvicorn
+Requires-Dist: google-genai
+Requires-Dist: httpx
+Requires-Dist: pydantic
+Requires-Dist: pydantic-settings
+Requires-Dist: python-dotenv
+Requires-Dist: prometheus-client
+Requires-Dist: anthropic
+Requires-Dist: openai
+Requires-Dist: tenacity

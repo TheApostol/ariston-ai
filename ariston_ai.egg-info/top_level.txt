@@ -1,0 +1,7 @@
+ariston_pharma
+config
+darwina
+demos
+hippokron
+main
+vinci_core

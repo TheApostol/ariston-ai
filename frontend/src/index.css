@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-primary: #0ea5e9;
+  --color-brand-secondary: #6366f1;
+  --color-brand-accent: #10b981;
+  --color-medical-red: #ef4444;
+  
+  --font-sans: "Inter", system-ui, sans-serif;
+  
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+}
+
+@layer base {
+  body {
+    @apply bg-[#030712] text-slate-200 antialiased selection:bg-brand-primary/30;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl;
+  }
+  
+  .medical-gradient {
+    background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+  }
+  
+  .nav-blur {
+    @apply sticky top-0 z-50 bg-[#030712]/80 backdrop-blur-md border-b border-white/5;
+  }
+}
+
+/* Custom Scrollbar for a premium look */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}

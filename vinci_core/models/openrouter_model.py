@@ -1,8 +1,11 @@
 import httpx
 from config import settings
+from vinci_core.models.base_model import BaseModel
 
+class OpenRouterModel(BaseModel):
+    def __init__(self, model_id: str = "openai/gpt-3.5-turbo"):
+        self.model_id = model_id
 
-class OpenRouterModel:
     async def generate(self, context: dict) -> dict:
         prompt = context.get("prompt", "")
 
@@ -17,7 +20,7 @@ class OpenRouterModel:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "openai/gpt-3.5-turbo",
+                    "model": self.model_id,
                     "messages": [
                         {"role": "user", "content": prompt}
                     ]
@@ -27,4 +30,12 @@ class OpenRouterModel:
             if response.status_code != 200:
                 raise Exception(response.text)
 
-            return response.json()
+            result = response.json()
+            # Normalize extract for consensus model
+            content = ""
+            if "choices" in result:
+                content = result["choices"][0]["message"]["content"]
+            else:
+                content = str(result)
+            
+            return {"content": content, "model": self.model_id, "raw": result}

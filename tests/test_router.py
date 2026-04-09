@@ -29,5 +29,6 @@ def test_fallback_logic():
     # Gemini falls back to Anthropic
     assert isinstance(router.get_fallback_model(GeminiModel()), AnthropicModel)
     
-    # Anthropic has no fallback
-    assert router.get_fallback_model(AnthropicModel()) is None
+    # Anthropic now falls back to local Ollama
+    from vinci_core.models.ollama_model import OllamaModel
+    assert isinstance(router.get_fallback_model(AnthropicModel()), OllamaModel)

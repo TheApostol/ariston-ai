@@ -2,7 +2,7 @@ import asyncio
 from vinci_core.models.anthropic_model import AnthropicModel
 from vinci_core.models.gemini_model import GeminiModel
 from vinci_core.models.openrouter_model import OpenRouterModel
-from vinci_core.models.base import BaseModel
+from vinci_core.models.base_model import BaseModel
 
 class ConsensusModel(BaseModel):
     def __init__(self):
@@ -27,11 +27,17 @@ class ConsensusModel(BaseModel):
         
         # Synthesize with arbiter
         synthesis_prompt = (
-            f"Model A diagnostic thought:\n{content_a}\n\n"
-            f"Model B diagnostic thought:\n{content_b}\n\n"
-            f"User Prompt: {context.get('prompt')}\n\n"
-            f"Analyze both thoughts. Synthesize them into a single, cohesive response "
-            f"that is safe, well-hedged, and represents a multidisciplinary consensus."
+            "You are the Ariston OS Clinical Consensus Arbiter. Your task is to synthesize contradictory or "
+            "complementary diagnostic thoughts from multiple expert models into a single 'Full Medical Analysis'.\n\n"
+            f"Expert Model A Analysis:\n{content_a}\n\n"
+            f"Expert Model B Analysis:\n{content_b}\n\n"
+            f"Original Patient Query: {context.get('prompt')}\n\n"
+            "Produce a structured medical report with the following sections:\n"
+            "1. CLINICAL SUMMARY (High-level state)\n"
+            "2. EVIDENCE SYNTHESIS (Merging Model A and B's findings with PubMed context)\n"
+            "3. FINAL CONSENSUS CONCLUSION (Primary diagnostic/management direction)\n"
+            "4. CRITICAL SAFETY CAVEATS (GxP mandatory warnings)\n\n"
+            "Ensure the tone is professional, exhaustive, and adheres to medical hedging standards."
         )
         
         synth_context = context.copy()

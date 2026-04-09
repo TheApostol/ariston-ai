@@ -17,8 +17,8 @@ async def test_openrouter_format():
         mock_post.return_value = mock_response
         
         res = await model.generate({"prompt": "test"})
-        assert "choices" in res
-        assert res["choices"][0]["message"]["content"] == "mock OR answer"
+        assert "content" in res
+        assert res["content"] == "mock OR answer"
 
 @pytest.mark.asyncio
 async def test_gemini_format():

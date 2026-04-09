@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ariston AI | Clinical Orchestrator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --bg: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #22d3ee;
+            --glass: rgba(255, 255, 255, 0.03);
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            background-image: 
+                radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(34, 211, 238, 0.1) 0%, transparent 40%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            padding: 2rem;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 1.5rem 4rem;
+            width: 100%;
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            margin-bottom: 2rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        textarea {
+            width: 100%;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            color: var(--text-primary);
+            font-size: 1rem;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 120px;
+            transition: all 0.2s;
+        }
+
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            color: var(--text-secondary);
+            background: var(--glass);
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 1rem;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(34, 211, 238, 0.05);
+            color: var(--accent);
+        }
+
+        .file-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .file-chip {
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid var(--primary);
+            color: var(--text-primary);
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .file-chip span {
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .preview-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .preview-img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        select {
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0.75rem;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            appearance: none;
+        }
+
+        button {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 1rem;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            grid-column: span 2;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .output {
+            margin-top: 2rem;
+            display: none;
+        }
+
+        .output.active {
+            display: block;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+
+        .status-accepted { background: rgba(34, 211, 238, 0.2); color: var(--accent); }
+
+        .job-id {
+            font-family: monospace;
+            background: var(--glass);
+            padding: 0.5rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            font-size: 0.85rem;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 3rem;
+        }
+
+        .info-item {
+            background: var(--glass);
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            border-radius: 16px;
+        }
+
+        .info-item h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            color: var(--accent);
+        }
+
+        .info-item p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .loader {
+            display: none;
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Ariston AI Orchestrator</h1>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <div class="input-group">
+                <label for="prompt">Clinical or General Query</label>
+                <textarea id="prompt" placeholder="e.g. Analyze symptoms: high fever and persistent cough. Could it be related to recently prescribed Lisinopril?"></textarea>
+            </div>
+
+            <div class="input-group">
+                <label>Attachments (MRI Scans, Blood Tests, RX Data)</label>
+                <div id="drop-zone" class="drop-zone">
+                    <p>Drag & Drop files here or <b>Click to upload</b></p>
+                    <p style="font-size: 0.75rem; margin-top: 0.5rem;">Supports Images (MRI/X-Ray) and JSON/XML (FHIR/Bloodworks)</p>
+                    <input type="file" id="file-input" multiple hidden>
+                </div>
+                <div id="preview-area" class="preview-container"></div>
+                <div id="file-list" class="file-list"></div>
+            </div>
+
+            <div class="controls">
+                <div class="input-group">
+                    <label for="layer">Intent Layer</label>
+                    <select id="layer">
+                        <option value="general">General (Vinci)</option>
+                        <option value="clinical">Clinical (HippoKron)</option>
+                        <option value="pharma">Pharma (Ariston)</option>
+                        <option value="data">Data Extraction</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="model">Model Override (Optional)</label>
+                    <select id="model">
+                        <option value="">Default (Auto-routed)</option>
+                        <option value="gpt-4o">GPT-4o</option>
+                        <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+                        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                    </select>
+                </div>
+            </div>
+
+            <button id="submit-btn" onclick="submitQuery()">
+                <span id="btn-text">Orchestrate Request</span>
+                <div id="loader" class="loader"></div>
+            </button>
+
+            <div id="output-area" class="output">
+                <div class="status-badge status-accepted">Request Accepted</div>
+                <div class="job-id" id="display-job-id">Job ID: ...</div>
+                <p style="font-size: 0.9rem; color: var(--text-secondary);">
+                    The request has been sent to the async background event bus. In the full production version, the result would appear here via WebSocket push. You can check the server logs for the background job processing.
+                </p>
+            </div>
+        </div>
+
+        <div class="info-grid">
+            <div class="info-item">
+                <h3>💊 Pharmacological</h3>
+                <p>Grounds queries in RxNorm. can read RX and evaluate drug classes/interactions.</p>
+            </div>
+            <div class="info-item">
+                <h3>🩻 Vision Radiology</h3>
+                <p>Multimodal analysis of MRI, X-Rays, and CT scans via Gemini 1.5 Pro.</p>
+            </div>
+            <div class="info-item">
+                <h3>🩸 Lab Results</h3>
+                <p>Native FHIR support for parsing blood tests and medical observations.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileList = document.getElementById('file-list');
+        const previewArea = document.getElementById('preview-area');
+        
+        let uploadedImages = [];
+        let uploadedFHIR = [];
+
+        dropZone.onclick = () => fileInput.click();
+
+        dropZone.ondragover = (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        };
+
+        dropZone.ondragleave = () => {
+            dropZone.classList.remove('dragover');
+        };
+
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        };
+
+        fileInput.onchange = (e) => {
+            handleFiles(e.target.files);
+        };
+
+        function handleFiles(files) {
+            Array.from(files).forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const base64 = e.target.result;
+                        uploadedImages.push(base64);
+                        addPreview(base64, file.name);
+                    };
+                    reader.readAsDataURL(file);
+                } else if (file.type === 'application/json' || file.name.endsWith('.json')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const json = JSON.parse(e.target.result);
+                            uploadedFHIR.push(json);
+                            addChip(file.name, 'fhir');
+                        } catch (err) {
+                            alert('Invalid JSON file: ' + file.name);
+                        }
+                    };
+                    reader.readAsText(file);
+                } else {
+                    addChip(file.name, 'generic');
+                }
+            });
+        }
+
+        function addPreview(src, name) {
+            const img = document.createElement('img');
+            img.src = src;
+            img.className = 'preview-img';
+            img.title = name;
+            previewArea.appendChild(img);
+        }
+
+        function addChip(name, type) {
+            const chip = document.createElement('div');
+            chip.className = 'file-chip';
+            chip.innerHTML = `${name} <span onclick="this.parentElement.remove()">×</span>`;
+            fileList.appendChild(chip);
+        }
+
+        async function submitQuery() {
+            const prompt = document.getElementById('prompt').value;
+            const layer = document.getElementById('layer').value;
+            const model = document.getElementById('model').value;
+            const btn = document.getElementById('submit-btn');
+            const btnText = document.getElementById('btn-text');
+            const loader = document.getElementById('loader');
+            const outputArea = document.getElementById('output-area');
+            const displayJobId = document.getElementById('display-job-id');
+
+            if (!prompt) return alert('Please enter a prompt');
+
+            btn.disabled = true;
+            btnText.style.display = 'none';
+            loader.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/v1/orchestrate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        context: { layer: layer },
+                        model: model || null,
+                        images: uploadedImages,
+                        fhir_bundle: uploadedFHIR
+                    })
+                });
+
+                if (!response.ok) throw new Error('API Error');
+
+                const data = await response.json();
+                displayJobId.innerText = `Job ID: ${data.job_id}`;
+                outputArea.classList.add('active');
+                
+                // Clear inputs for next job
+                uploadedImages = [];
+                uploadedFHIR = [];
+                previewArea.innerHTML = '';
+                fileList.innerHTML = '';
+            } catch (err) {
+                alert('Connection failed: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btnText.style.display = 'block';
+                loader.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>

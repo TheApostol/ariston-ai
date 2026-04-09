@@ -1,0 +1,36 @@
+[project]
+name = "ariston-ai"
+version = "0.1.0"
+description = "Production-grade clinical AI orchestration engine"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "google-genai",
+    "httpx",
+    "pydantic",
+    "pydantic-settings",
+    "python-dotenv",
+    "prometheus-client",
+    "anthropic",
+    "openai",
+    "tenacity"
+]
+
+[tool.setuptools]
+packages = ["vinci_core", "darwina", "hippokron", "ariston_pharma"]
+py-modules = ["config", "main", "demos"]
+
+[tool.pyright]
+include = ["."]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    ".git"
+]
+venvPath = "."
+venv = ".venv"
+executionEnvironments = [
+    { root = "." }
+]

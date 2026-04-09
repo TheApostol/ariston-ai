@@ -13,9 +13,11 @@ class FHIRObservation(FHIRResource):
 
 class AIRequest(BaseModel):
     prompt: str = Field(..., description="The user's query or prompt.")
+    patient_id: str | None = Field(default=None, description="Longitudinal patient identifier for GxP history tracking.")
     model: str | None = Field(default=None, description="Optional forced model override.")
     context: dict[str, Any] | None = Field(default_factory=dict, description="Metadata and history context.")
     fhir_bundle: list[dict[str, Any]] | None = Field(default=None, description="Optional raw FHIR API inputs")
+    images: list[str] | None = Field(default=None, description="List of Base64 strings or URLs for medical scans.")
     stream: bool = False
 
 class ClinicalRequest(AIRequest):

@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+google-genai
+httpx
+pydantic
+pydantic-settings
+python-dotenv
+prometheus-client
+anthropic
+openai
+tenacity
