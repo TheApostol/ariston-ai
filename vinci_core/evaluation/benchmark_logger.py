@@ -18,6 +18,12 @@ from typing import Dict, Any
 
 logger = logging.getLogger("ariston.benchmark")
 
+#: Allowlist of layer names safe to persist/log.  Any value outside this set
+#: is replaced with "unknown" before it reaches disk or log lines.
+_SAFE_LAYER_NAMES = frozenset(
+    {"base", "pharma", "clinical", "data", "radiology", "general", "unknown"}
+)
+
 #: Source attribution keywords that indicate RAG grounding was used effectively.
 _GROUNDING_SOURCE_INDICATORS = ("Source", "PubMed", "FDA", "ClinicalTrials")
 
@@ -96,6 +102,8 @@ class BenchmarkLogger:
     ) -> Dict[str, Any]:
         cls._setup()
 
+        # Sanitise layer against the allowlist before it reaches any log or disk path.
+        safe_layer = layer if layer in _SAFE_LAYER_NAMES else "unknown"
         rag_used: bool = bool(response_metadata.get("rag_used", False))
 
         # 1. Evidence grounding — did the model use retrieved knowledge?
@@ -134,7 +142,7 @@ class BenchmarkLogger:
 
         log_entry = {
             "timestamp":   datetime.now(timezone.utc).isoformat(),
-            "layer":       layer,
+            "layer":       safe_layer,
             "model":       response_metadata.get("model", "unknown"),
             "safety_flag": safety_flag,
             "metrics":     metrics,
@@ -146,7 +154,7 @@ class BenchmarkLogger:
         if hallucination_risk > 0.60:
             logger.warning(
                 '{"event":"high_hallucination_risk","layer":"%s","risk":%.3f}',
-                layer, hallucination_risk,
+                safe_layer, hallucination_risk,
             )
 
         return metrics

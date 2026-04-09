@@ -25,7 +25,7 @@ from vinci_core.schemas import AIResponse
 from vinci_core.routing.model_router import ModelRouter
 from vinci_core.safety.guardrails import SafetyGuardrails, check_safety
 from vinci_core.engine_context import build_request_context
-from vinci_core.evaluation.benchmark_logger import benchmark_logger
+from vinci_core.evaluation.benchmark_logger import benchmark_logger, _SAFE_LAYER_NAMES
 from app.services.audit_ledger import AristonAuditLedger
 
 logger = logging.getLogger("ariston.engine")
@@ -118,7 +118,9 @@ class Engine:
             logger.info(
                 '{"event":"engine_complete","request_id":"%s","model":"%s","layer":"%s",'
                 '"latency_ms":%d,"safety_flag":"%s","rag_used":%s}',
-                request_id, response.model, layer, latency_ms,
+                request_id, response.model,
+                layer if layer in _SAFE_LAYER_NAMES else "unknown",
+                latency_ms,
                 safety_meta.get("flag", "SAFE"),
                 str(use_rag).lower(),
             )
