@@ -2,15 +2,20 @@
 Primary orchestration API.
 - POST /orchestrate — submit a job (background, non-blocking)
 - WebSocket /ws/jobs/{client_id} — real-time status
+- GET /health — provider health probe
 - GET /audit — GxP audit trail
 - GET /patient/{id}/history — longitudinal records
 - POST /patient/{id}/record — add patient event
 - GET /benchmarks — MedPerf eval logs
 """
 
+import asyncio
+import os
+import time
 import uuid
 import json
 import logging
+import httpx
 from fastapi import APIRouter, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from vinci_core.schemas import AIResponse
@@ -68,6 +73,73 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             await websocket.receive_text()  # heartbeat / keep-alive
     except WebSocketDisconnect:
         manager.disconnect(client_id)
+
+
+@router.get("/health")
+async def health_check():
+    """
+    Probe AI provider availability.
+
+    Concurrently checks Anthropic, OpenRouter, and Ollama (5 s timeout each).
+    Always returns HTTP 200; degraded state is reflected in the body.
+    """
+    _TIMEOUT = 5.0
+
+    async def _check_anthropic() -> str:
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            return "no_key"
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                r = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                )
+            return "ok" if r.status_code < 500 else "error"
+        except Exception:
+            return "unreachable"
+
+    async def _check_openrouter() -> str:
+        api_key = os.getenv("OPENROUTER_API_KEY", "")
+        if not api_key:
+            return "no_key"
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                r = await client.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            return "ok" if r.status_code < 500 else "error"
+        except Exception:
+            return "unreachable"
+
+    async def _check_ollama() -> str:
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                r = await client.get(f"{base_url}/api/tags")
+            return "ok" if r.status_code < 500 else "error"
+        except Exception:
+            return "unreachable"
+
+    t0 = time.monotonic()
+    anthropic_status, openrouter_status, ollama_status = await asyncio.gather(
+        _check_anthropic(), _check_openrouter(), _check_ollama()
+    )
+    latency_ms = round((time.monotonic() - t0) * 1000)
+
+    providers = {
+        "anthropic": anthropic_status,
+        "openrouter": openrouter_status,
+        "ollama": ollama_status,
+    }
+    overall = "ok" if all(v in ("ok", "no_key") for v in providers.values()) else "degraded"
+
+    return {
+        "status": overall,
+        "providers": providers,
+        "latency_ms": latency_ms,
+    }
 
 
 @router.get("/audit")
