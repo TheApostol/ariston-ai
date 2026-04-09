@@ -1,18 +1,15 @@
-from pydantic import BaseModel, Field
-from typing import Dict, List, Any, Optional
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
 
-class AIRequest(BaseModel):
+
+class OrchestrateRequest(BaseModel):
     prompt: str
-    images: List[str] = Field(default_factory=list)
-    fhir_bundle: List[Dict[str, Any]] = Field(default_factory=list)
-    context: Dict[str, Any] = Field(default_factory=dict)
-    model: Optional[str] = None
+    layer: Optional[str] = None          # auto-detected if not provided
+    model: Optional[str] = None          # use layer default if not provided
+    patient_id: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+    use_rag: bool = True
 
-class AIResponse(BaseModel):
-    model: str
-    content: str
-    usage: Dict[str, Any]
-    metadata: Dict[str, Any]
 
 class JobResponse(BaseModel):
     job_id: str

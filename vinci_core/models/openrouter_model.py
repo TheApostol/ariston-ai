@@ -1,41 +1,60 @@
+import os
 import httpx
-from config import settings
-from vinci_core.models.base_model import BaseModel
 
-class OpenRouterModel(BaseModel):
-    def __init__(self, model_id: str = "openai/gpt-3.5-turbo"):
-        self.model_id = model_id
 
-    async def generate(self, context: dict) -> dict:
-        prompt = context.get("prompt", "")
+class OpenRouterModel:
+    def __init__(self):
+        self.api_key = None
+        self.url = "https://openrouter.ai/api/v1/chat/completions"
 
-        if not settings.OPENROUTER_API_KEY:
-            raise ValueError("Missing OPENROUTER_API_KEY")
+    def get_api_key(self):
+        if not self.api_key:
+            self.api_key = os.getenv("OPENROUTER_API_KEY")
+            if not self.api_key:
+                raise ValueError("Missing OPENROUTER_API_KEY")
+        return self.api_key
+
+    async def generate(self, messages=None, prompt=None):
+        api_key = self.get_api_key()
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8000",
+            "X-Title": "Ariston AI",
+        }
+
+        payload = {
+            "model": "openrouter/free",
+            "messages": messages if messages else [
+                {"role": "user", "content": prompt}
+            ],
+        }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model_id,
-                    "messages": [
-                        {"role": "user", "content": prompt}
-                    ]
-                }
-            )
+            response = await client.post(self.url, headers=headers, json=payload)
 
-            if response.status_code != 200:
-                raise Exception(response.text)
+        try:
+            data = response.json()
+        except Exception:
+            return {
+                "model": "openrouter",
+                "content": f"Invalid response: {response.text}",
+                "usage": None,
+                "metadata": {"error": True},
+            }
 
-            result = response.json()
-            # Normalize extract for consensus model
-            content = ""
-            if "choices" in result:
-                content = result["choices"][0]["message"]["content"]
-            else:
-                content = str(result)
-            
-            return {"content": content, "model": self.model_id, "raw": result}
+        if "error" in data:
+            return {
+                "model": "openrouter",
+                "content": str(data["error"]),
+                "usage": None,
+                "metadata": {"error": True},
+            }
+
+        return {
+            "model": "openrouter",
+            "content": data["choices"][0]["message"]["content"],
+            "usage": data.get("usage"),
+            "metadata": {"error": False},
+        }

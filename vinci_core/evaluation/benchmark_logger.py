@@ -1,77 +1,78 @@
+"""
+MLCommons / MedPerf style benchmarking logger.
+Evaluates every response against clinical constraints and logs to JSONL.
+(Adapted from ariston-ai-1)
+"""
+
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 
+
 class BenchmarkLogger:
-    """
-    MLCommons / MedPerf style benchmarking logger.
-    Evaluates responses against clinical constraints and logs them.
-    """
     LOG_DIR = "benchmarks"
     LOG_FILE = os.path.join(LOG_DIR, "eval_logs.jsonl")
 
     @classmethod
-    def setup(cls):
-        if not os.path.exists(cls.LOG_DIR):
-            os.makedirs(cls.LOG_DIR)
+    def _setup(cls):
+        os.makedirs(cls.LOG_DIR, exist_ok=True)
 
     @classmethod
-    def evaluate_and_log(cls, request_context: dict, response_metadata: dict, response_content: str):
-        cls.setup()
-        
-        prompt = request_context.get("prompt", "")
-        
-        # 1. Evidence Grounding Eval
-        grounded_score = 0.0
-        if "PubMed Evidence:" in prompt or "RxNorm Classes:" in prompt:
-            # Basic heuristic: does the model utilize/acknowledge the evidence?
-            lower_content = response_content.lower()
-            if any(term in lower_content for term in ["clinical", "data", "pubmed", "evidence", "classes", "literature"]):
-                grounded_score = 0.95
-            else:
-                grounded_score = 0.50
-        # 2. Safety Eval
-        safety_flag = response_metadata.get("safety_flag", "UNKNOWN")
+    def evaluate_and_log(
+        cls,
+        prompt: str,
+        response_content: str,
+        response_metadata: Dict[str, Any],
+        layer: str = "unknown",
+    ) -> Dict[str, Any]:
+        cls._setup()
+
+        # 1. Evidence grounding — did the model use retrieved knowledge?
+        lower = response_content.lower()
+        grounding_score = 0.0
+        if any(k in prompt for k in ["Source", "PubMed", "FDA", "ClinicalTrials"]):
+            grounding_score = 0.95 if any(
+                t in lower for t in ["clinical", "evidence", "literature", "trial", "study"]
+            ) else 0.50
+        else:
+            grounding_score = 0.75  # no RAG context, neutral
+
+        # 2. Safety score
+        safety = response_metadata.get("safety", {})
+        safety_flag = safety.get("flag", "SAFE")
         safety_score = 1.0 if safety_flag == "SAFE" else 0.0
 
-        # 3. Precision Clinical Safety (Ontological Grounding)
-        grounded_entities = response_metadata.get("grounded_entities", [])
-        precision_safety = 0.0
-        if grounded_entities:
-            # How many of the grounded terms appear in the final answer?
-            matches = sum(1 for e in grounded_entities if e["term"].lower() in response_content.lower())
-            precision_safety = matches / len(grounded_entities)
-        else:
-            precision_safety = 1.0 # default for general queries
+        # 3. Confidence from guardrails
+        confidence = safety.get("confidence", 1.0)
 
-        # Create rigorous ML Commons style event block
-        log_entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "layer": request_context.get("layer", "unknown"),
-            "model_provider": response_metadata.get("provider", "unknown"),
-            "latency_ms": response_metadata.get("latency_ms", 0),
-            "fallback_triggered": response_metadata.get("fallback_used", False),
-            "metrics": {
-                "grounding_score": grounded_score,
-                "safety_score": safety_score,
-                "precision_clinical_safety": precision_safety,
-                "confidence_score": response_metadata.get("confidence", 1.0)
-            },
-            "eval_flags": {
-                "guardrail_status": safety_flag
-            }
+        metrics = {
+            "grounding_score": round(grounding_score, 3),
+            "safety_score": round(safety_score, 3),
+            "confidence_score": round(confidence, 3),
+            "rag_used": response_metadata.get("rag_used", False),
+            "consensus": response_metadata.get("consensus", False),
         }
-        
+
+        log_entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "layer": layer,
+            "model": response_metadata.get("model", "unknown"),
+            "safety_flag": safety_flag,
+            "metrics": metrics,
+        }
+
         cls._write_log(log_entry)
-        
-        # Append to metadata so it's transparent to API caller
-        response_metadata["benchmark_metrics"] = log_entry["metrics"]
+        response_metadata["benchmark_metrics"] = metrics
+        return metrics
 
     @classmethod
-    def _write_log(cls, log_entry: Dict[str, Any]):
+    def _write_log(cls, entry: Dict[str, Any]):
         try:
             with open(cls.LOG_FILE, "a") as f:
-                f.write(json.dumps(log_entry) + "\n")
+                f.write(json.dumps(entry) + "\n")
         except Exception as e:
-            print(f"Benchmark log failed: {e}")
+            print(f"[BenchmarkLogger] write failed: {e}")
+
+
+benchmark_logger = BenchmarkLogger()

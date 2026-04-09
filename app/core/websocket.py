@@ -1,11 +1,13 @@
-from fastapi import WebSocket
-from typing import Dict, List
+"""
+WebSocket connection manager for real-time job status streaming.
+"""
+
 import json
+from fastapi import WebSocket
+from typing import Dict
+
 
 class ConnectionManager:
-    """
-    Manages active WebSocket connections for real-time Life Science OS updates.
-    """
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
 
@@ -14,20 +16,20 @@ class ConnectionManager:
         self.active_connections[client_id] = websocket
 
     def disconnect(self, client_id: str):
-        if client_id in self.active_connections:
-            del self.active_connections[client_id]
+        self.active_connections.pop(client_id, None)
 
-    async def send_personal_message(self, message: str, client_id: str):
-        if client_id in self.active_connections:
-            await self.active_connections[client_id].send_text(message)
+    async def send(self, client_id: str, message: dict):
+        ws = self.active_connections.get(client_id)
+        if ws:
+            await ws.send_text(json.dumps(message))
 
-    async def broadcast_job_update(self, job_id: str, status: str, data: dict = None):
-        message = json.dumps({
-            "job_id": job_id,
-            "status": status,
-            "data": data or {}
-        })
-        for connection in self.active_connections.values():
-            await connection.send_text(message)
+    async def broadcast(self, job_id: str, status: str, data: dict = None):
+        message = json.dumps({"job_id": job_id, "status": status, "data": data or {}})
+        for ws in list(self.active_connections.values()):
+            try:
+                await ws.send_text(message)
+            except Exception:
+                pass
+
 
 manager = ConnectionManager()

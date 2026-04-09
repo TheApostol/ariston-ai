@@ -1,68 +1,36 @@
-from fastapi import FastAPI, BackgroundTasks, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from vinci_core.engine import engine
-from vinci_core.schemas import AIRequest
-from vinci_core.workflows.clinical_pipeline import ClinicalPipeline
-import logging
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
+os.makedirs("data", exist_ok=True)
+os.makedirs("benchmarks", exist_ok=True)
 
-app = FastAPI(title="Ariston AI Event Bus", version="1.0.0")
+from fastapi import FastAPI
+from vinci_core.router import router as vinci_router
+from ariston_pharma.router import router as pharma_router
+from hippokron.router import router as hippokron_router
+from darwina.router import router as darwina_router
+from app.api.v1.endpoints.orchestration import router as orchestration_router
 
-# Serve static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app = FastAPI(
+    title="Ariston AI — Life Sciences Platform",
+    version="0.2.0",
+    description=(
+        "AI orchestration engine for pharmaceutical regulatory intelligence, "
+        "clinical trial optimization, and real-world evidence analysis."
+    ),
+)
 
-@app.get("/")
-async def read_index():
-    return FileResponse('static/index.html')
+# Domain-specific routers
+app.include_router(vinci_router, prefix="/api/v1")
+app.include_router(pharma_router, prefix="/api/v1")
+app.include_router(hippokron_router, prefix="/api/v1")
+app.include_router(darwina_router, prefix="/api/v1/darwina")
 
-# Background worker queue for async execution
-async def background_clinical_job(request: AIRequest, job_id: str):
-    from vinci_core.logger import audit_logger
-    try:
-        pipeline = ClinicalPipeline(engine)
-        response = await pipeline.execute(request)
-        logging.info(f"Job {job_id} Completed. Focus: {response.model}")
-        
-        # Log to Audit DB
-        audit_logger.log_event(
-            job_id=job_id,
-            intent=request.context.get("layer", "clinical"),
-            model=response.model,
-            prompt=request.prompt,
-            response=response.content,
-            score=response.metadata.get("grounded_entities_count", 0),
-            meta=response.metadata
-        )
-    except Exception as e:
-        logging.error(f"Job {job_id} Failed: {str(e)}")
-        audit_logger.log_event(
-            job_id=job_id,
-            intent=request.context.get("layer", "clinical"),
-            model="error",
-            prompt=request.prompt,
-            response=str(e),
-            safety_violation=True
-        )
+# Primary orchestration router (background jobs + WebSocket + audit)
+app.include_router(orchestration_router, prefix="/api/v1")
 
-class JobResponse(BaseModel):
-    job_id: str
-    status: str
-
-@app.post("/api/v1/orchestrate", response_model=JobResponse)
-async def orchestrate_request(request: AIRequest, background_tasks: BackgroundTasks):
-    """
-    Accepts clinical requests and drops them onto the async background event bus
-    for processing without blocking the API gateway.
-    """
-    import uuid
-    job_id = str(uuid.uuid4())
-    
-    background_tasks.add_task(background_clinical_job, request, job_id)
-    
-    return JobResponse(job_id=job_id, status="accepted_for_processing")
 
 @app.get("/health")
-def health_check():
-    return {"status": "healthy", "engine": "vinci-orchestrator-active"}
+async def health():
+    return {"status": "ok", "platform": "Ariston AI", "version": "0.2.0"}

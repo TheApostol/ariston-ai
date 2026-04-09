@@ -25,10 +25,13 @@ def build_pharma_context(
 async def pharma_query(
     prompt: str,
     document: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None,
+    drug_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
 
     context = build_pharma_context(document, metadata)
+    if drug_context:
+        context.update(drug_context)
 
     return await engine.run(
         prompt=prompt,
