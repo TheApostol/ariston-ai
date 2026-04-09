@@ -101,7 +101,10 @@ async def trigger_improvement_cycle_sync():
 
     Use for testing or when you need the plan immediately.
     """
-    return await run_improvement_cycle()
+    try:
+        return await run_improvement_cycle()
+    except Exception:
+        return {"status": "error", "message": "Improvement cycle failed. Check server logs."}
 
 
 @router.get("/cycle/history")

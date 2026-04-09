@@ -260,6 +260,7 @@ def get_document_versions(
     """List document versions for a pilot."""
     _init_db(db_path)
 
+    # Explicitly exclude 'content' (potentially large) to keep listing queries fast
     query = "SELECT id, pilot_id, document_type, version, drug_name, indication, language, agency, created_at, created_by, change_summary, is_active FROM document_versions WHERE pilot_id = ?"
     params: list = [pilot_id]
 

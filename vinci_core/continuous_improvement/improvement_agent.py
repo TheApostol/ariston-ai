@@ -191,5 +191,5 @@ def get_improvement_history(limit: int = 20) -> List[dict]:
     except Exception as e:
         print(f"[ImprovementAgent] Failed to load history: {e}")
         return []
-    # Most recent first
-    return list(reversed(entries))[-limit:]
+    # Most recent first (slice first, then reverse — avoids reversing full list)
+    return list(reversed(entries[-limit:]))

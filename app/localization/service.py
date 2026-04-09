@@ -161,7 +161,7 @@ async def translate_text(
         "translated_text": response.content,
         "target_locale": target_locale,
         "source_locale": detected_source,
-        "confidence": 0.92,   # domain-specific translation confidence
+        "confidence": 0.92,   # fixed domain-specific confidence; update when real quality scoring is available
         "latency_ms": elapsed_ms,
         "character_count": len(text),
         "model": response.model,
