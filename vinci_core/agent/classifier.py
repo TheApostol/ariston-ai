@@ -1,16 +1,21 @@
 """
 Intent Classifier — autonomous layer routing before execution.
 Classifies prompts into pharma/clinical/data/radiology/general.
-(Ported and adapted from ariston-ai-1)
+
+Two-stage: fast keyword heuristics → LLM fallback (OpenRouter, free tier).
 """
+
+import logging
 
 from vinci_core.models.openrouter_model import OpenRouterModel
 
+logger = logging.getLogger("ariston.classifier")
+
 VALID_LAYERS = ["clinical", "pharma", "data", "radiology", "general"]
 
-VISION_KEYWORDS = ["x-ray", "mri", "ct scan", "image", "scan", "radiograph", "ultrasound", "pet scan"]
-PHARMA_KEYWORDS = ["drug", "medication", "dosage", "pharmacology", "interaction", "fda", "regulatory", "ectd", "csr", "nda", "bla"]
-DATA_KEYWORDS = ["dataset", "csv", "cohort", "rwe", "real-world", "biomarker", "signal", "pharmacovigilance"]
+VISION_KEYWORDS   = ["x-ray", "mri", "ct scan", "image", "scan", "radiograph", "ultrasound", "pet scan"]
+PHARMA_KEYWORDS   = ["drug", "medication", "dosage", "pharmacology", "interaction", "fda", "regulatory", "ectd", "csr", "nda", "bla"]
+DATA_KEYWORDS     = ["dataset", "csv", "cohort", "rwe", "real-world", "biomarker", "signal", "pharmacovigilance"]
 CLINICAL_KEYWORDS = ["symptom", "diagnosis", "patient", "disease", "treatment", "clinical", "therapy", "prognosis"]
 
 
@@ -54,11 +59,16 @@ class IntentClassifier:
             content = content.lower().strip()
             for layer in VALID_LAYERS:
                 if layer in content:
+                    logger.debug('{"event":"classifier_llm","result":"%s"}', layer)
                     return layer
-        except Exception as e:
-            print(f"[Classifier] LLM fallback failed: {e}")
+        except Exception as exc:
+            logger.warning(
+                '{"event":"classifier_llm_failed","error":"%s","fallback":"general"}',
+                type(exc).__name__,
+            )
 
         return "general"
 
 
 classifier = IntentClassifier()
+
