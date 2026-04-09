@@ -68,7 +68,7 @@ class AgentSwarm:
         swarm_id = str(uuid.uuid4())
         started_at = datetime.now(timezone.utc).isoformat()
         stages_run: List[str] = []
-        stages = include_stages or ["patient", "classifier", "pgx", "twin", "iomt", "clinical", "regulatory"]
+        stages = include_stages or ["patient", "classifier", "pgx", "pharmacist", "twin", "iomt", "clinical", "regulatory"]
 
         report: Dict[str, Any] = {
             "swarm_id": swarm_id,
@@ -119,6 +119,26 @@ class AgentSwarm:
                 stages_run.append("pgx")
             except Exception as e:
                 report["stages"]["pgx"] = {"status": "error", "error": str(e)}
+
+        # ── Stage 3b: PharmacistAgent — DDI + pharmacovigilance ───────────────
+        if "pharmacist" in stages and drug_name:
+            try:
+                from vinci_core.agent.pharmacist_agent import PharmacistAgent
+                pharmacist = PharmacistAgent()
+                pharma_context = {
+                    "pharma_grounding": pgx_result.get("recommendation", ""),
+                }
+                pharmacist_review = await pharmacist.review_medications(
+                    prompt=f"Review {drug_name} for DDI risks. {prompt}",
+                    context=pharma_context,
+                )
+                report["stages"]["pharmacist"] = {
+                    "status": "ok",
+                    "review": pharmacist_review,
+                }
+                stages_run.append("pharmacist")
+            except Exception as e:
+                report["stages"]["pharmacist"] = {"status": "error", "error": str(e)}
 
         # ── Stage 4: Digital Twin simulation ──────────────────────────────────
         twin_result: Dict[str, Any] = {}

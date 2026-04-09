@@ -106,6 +106,7 @@ async def health():
         "layer": "swarm",
         "agents": [
             "patient_history", "intent_classifier", "pharmacogenomics",
-            "digital_twin", "iomt", "clinical_pipeline", "regulatory_copilot",
+            "pharmacist", "digital_twin", "iomt",
+            "clinical_pipeline", "regulatory_copilot",
         ],
     }

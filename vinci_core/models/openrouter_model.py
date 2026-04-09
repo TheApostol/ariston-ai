@@ -1,60 +1,104 @@
+"""
+OpenRouter provider — normalized interface with timeout and retry.
+
+Returns: { model, content, usage, metadata }
+"""
+
+import logging
 import os
+from typing import Any, Dict, List, Optional
+
 import httpx
 
+from vinci_core.models.base_model import BaseModel
+from vinci_core.utils.retry import async_retry
 
-class OpenRouterModel:
+logger = logging.getLogger("ariston.providers.openrouter")
+
+_DEFAULT_MODEL = "openrouter/auto"
+_TIMEOUT_SECONDS = 30
+_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+class OpenRouterModel(BaseModel):
+    name = "openrouter"
+
     def __init__(self):
-        self.api_key = None
-        self.url = "https://openrouter.ai/api/v1/chat/completions"
+        self._api_key: Optional[str] = None
 
-    def get_api_key(self):
-        if not self.api_key:
-            self.api_key = os.getenv("OPENROUTER_API_KEY")
-            if not self.api_key:
-                raise ValueError("Missing OPENROUTER_API_KEY")
-        return self.api_key
+    def _get_api_key(self) -> str:
+        if not self._api_key:
+            key = os.getenv("OPENROUTER_API_KEY")
+            if not key:
+                raise ValueError("Missing OPENROUTER_API_KEY environment variable")
+            self._api_key = key
+        return self._api_key
 
-    async def generate(self, messages=None, prompt=None):
-        api_key = self.get_api_key()
+    @async_retry(max_attempts=3, base_delay=1.0, exceptions=(httpx.TimeoutException, httpx.NetworkError))
+    async def generate(
+        self,
+        messages: Optional[List[Dict[str, str]]] = None,
+        prompt: Optional[str] = None,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Generate a completion via OpenRouter.
+
+        Accepts either *messages* list or a plain *prompt* string.
+        """
+        if not messages and prompt:
+            messages = [{"role": "user", "content": prompt}]
+        elif not messages:
+            messages = []
+
+        target_model = model or _DEFAULT_MODEL
 
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {self._get_api_key()}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8000",
+            "HTTP-Referer": "https://ariston.ai",
             "X-Title": "Ariston AI",
         }
+        payload = {"model": target_model, "messages": messages}
 
-        payload = {
-            "model": "openrouter/free",
-            "messages": messages if messages else [
-                {"role": "user", "content": prompt}
-            ],
-        }
+        logger.debug("[openrouter] calling model=%s messages=%d", target_model, len(messages))
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(self.url, headers=headers, json=payload)
+        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+            response = await client.post(_BASE_URL, headers=headers, json=payload)
 
         try:
             data = response.json()
         except Exception:
-            return {
-                "model": "openrouter",
-                "content": f"Invalid response: {response.text}",
-                "usage": None,
-                "metadata": {"error": True},
-            }
+            return _error_response(f"Invalid JSON response (HTTP {response.status_code})")
 
         if "error" in data:
-            return {
-                "model": "openrouter",
-                "content": str(data["error"]),
-                "usage": None,
-                "metadata": {"error": True},
-            }
+            err = data["error"]
+            msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+            logger.warning("[openrouter] API error: %s", msg)
+            return _error_response(f"OpenRouter error: {msg}")
+
+        raw_usage = data.get("usage") or {}
+        prompt_tokens = raw_usage.get("prompt_tokens", 0) or 0
+        completion_tokens = raw_usage.get("completion_tokens", 0) or 0
 
         return {
-            "model": "openrouter",
+            "model": data.get("model", target_model),
             "content": data["choices"][0]["message"]["content"],
-            "usage": data.get("usage"),
-            "metadata": {"error": False},
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+            "metadata": {"provider": "openrouter"},
         }
+
+
+def _error_response(message: str) -> Dict[str, Any]:
+    return {
+        "model": "openrouter",
+        "content": message,
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "metadata": {"provider": "openrouter", "error": True},
+    }
+

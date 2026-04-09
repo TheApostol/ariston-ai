@@ -12,7 +12,7 @@ Follows ICH E2B(R3) / CIOMS I format:
   - Reporter assessment
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 
@@ -78,7 +78,7 @@ class PharmacovigilanceNarrativeAgent:
             severity_key, ("NON-SERIOUS", "non-serious")
         )
         extra = event.get("narrative", "")
-        generated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         patient_desc = f"{'a ' + str(age) + '-year-old' if age else 'a'} {sex} patient"
 
@@ -128,7 +128,7 @@ class PharmacovigilanceNarrativeAgent:
             severity_key, ("NON-SERIOUS", "non-serious")
         )
         extra = event.get("narrative", "")
-        generated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         narrative = (
             f"FDA MEDWATCH ADVERSE EVENT REPORT (3500A Equivalent)\n"
