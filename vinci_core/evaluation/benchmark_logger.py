@@ -18,11 +18,15 @@ from typing import Dict, Any
 
 logger = logging.getLogger("ariston.benchmark")
 
-#: Allowlist of layer names safe to persist/log.  Any value outside this set
-#: is replaced with "unknown" before it reaches disk or log lines.
+#: Allowlist of layer names safe to persist/log.  Values are sourced from this
+#: dict, not from user input — this breaks the CodeQL taint chain.
 _SAFE_LAYER_NAMES = frozenset(
     {"base", "pharma", "clinical", "data", "radiology", "general", "unknown"}
 )
+#: Lookup dict: maps each valid layer name to itself (a trusted literal).
+#: dict.get(user_value, "unknown") returns a value from this dict, not the
+#: user-controlled key, so CodeQL treats the result as untainted.
+_LAYER_DISPLAY: dict = {name: name for name in _SAFE_LAYER_NAMES}
 
 #: Source attribution keywords that indicate RAG grounding was used effectively.
 _GROUNDING_SOURCE_INDICATORS = ("Source", "PubMed", "FDA", "ClinicalTrials")
@@ -102,8 +106,9 @@ class BenchmarkLogger:
     ) -> Dict[str, Any]:
         cls._setup()
 
-        # Sanitise layer against the allowlist before it reaches any log or disk path.
-        safe_layer = layer if layer in _SAFE_LAYER_NAMES else "unknown"
+        # Sanitise layer: look it up in the trusted dict; returns a dict value
+        # (not user input) so the CodeQL taint chain is broken.
+        safe_layer: str = _LAYER_DISPLAY.get(layer, "unknown")
         rag_used: bool = bool(response_metadata.get("rag_used", False))
 
         # 1. Evidence grounding — did the model use retrieved knowledge?
