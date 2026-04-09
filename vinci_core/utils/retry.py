@@ -21,6 +21,8 @@ _TRANSIENT_MARKERS = ("429", "timeout", "502", "503", "rate limit", "overloaded"
 
 def async_retry(max_attempts: int = 3, base_delay: float = 1.0):
     """Decorator that retries an async callable on transient provider errors."""
+    if max_attempts < 1:
+        raise ValueError(f"async_retry: max_attempts must be >= 1, got {max_attempts}")
 
     def decorator(func):
         @wraps(func)

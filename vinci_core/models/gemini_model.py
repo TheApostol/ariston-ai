@@ -46,8 +46,8 @@ class GeminiModel:
         )
 
         usage_meta = getattr(response, "usage_metadata", None)
-        prompt_tokens = getattr(usage_meta, "prompt_token_count", 0) or 0
-        completion_tokens = getattr(usage_meta, "candidates_token_count", 0) or 0
+        prompt_tokens = getattr(usage_meta, "prompt_token_count", 0)
+        completion_tokens = getattr(usage_meta, "candidates_token_count", 0)
 
         return {
             "model": _MODEL_NAME,

@@ -51,8 +51,8 @@ class Engine:
             valid, prompt, input_meta = SafetyGuardrails.validate_input(prompt)
             if not valid:
                 logger.warning(
-                    '{"event": "input_blocked", "request_id": "%s", "reason": "%s"}',
-                    request_id, input_meta.get("safety_flag"),
+                    '{"event": "input_blocked", "request_id": "%s"}',
+                    request_id,
                 )
                 return AIResponse(
                     model="vinci-safety",

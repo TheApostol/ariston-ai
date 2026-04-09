@@ -80,7 +80,7 @@ class ModelRouter:
             ("openrouter", self.openrouter),
             ("gemini", self.gemini),
         ]:
-            if model_instance is primary or type(model_instance) is type(primary):
+            if model_instance is primary or isinstance(model_instance, type(primary)):
                 chain = self._fallback_chain.get(key, [])
                 return chain[0] if chain else self.ollama
         return self.ollama
