@@ -16,12 +16,13 @@ class PharmaRequest(BaseModel):
 
 
 class DraftRequest(BaseModel):
-    document_type: str = "csr"        # csr | ectd | cmc | pv_narrative
+    document_type: str = "csr"        # csr | ectd | cmc | pv_narrative | cofepris_registro | anvisa_registro | anmat_registro | invima_registro
     drug_name: str
     indication: str
     nct_id: Optional[str] = None      # ClinicalTrials.gov ID for live grounding
     study_data: Optional[dict] = None
     section: Optional[str] = None     # draft a single section only
+    language: Optional[str] = None    # "en" | "es" | "pt" — overrides template default
 
 
 @router.post("/regulatory", response_model=AIResponse)
@@ -54,6 +55,7 @@ async def draft_document(request: DraftRequest):
         nct_id=request.nct_id,
         study_data=request.study_data,
         section=request.section,
+        language=request.language,
     )
 
 
@@ -80,6 +82,7 @@ async def draft_document_pdf(request: DraftRequest):
         nct_id=request.nct_id,
         study_data=request.study_data,
         section=request.section,
+        language=request.language,
     )
     pdf_bytes = render_pdf(draft)
     filename = (
@@ -95,12 +98,14 @@ async def draft_document_pdf(request: DraftRequest):
 
 @router.get("/document-types")
 async def get_document_types():
-    """List supported regulatory document types."""
+    """List supported regulatory document types including LATAM agencies."""
     return {
         doc_type: {
             "title": tmpl["title"],
             "guideline": tmpl["guideline"],
             "fda_reference": tmpl["fda_ref"],
+            "agency": tmpl.get("agency", "FDA / ICH"),
+            "language": tmpl.get("language", "en"),
         }
         for doc_type, tmpl in DOCUMENT_TEMPLATES.items()
     }

@@ -18,8 +18,8 @@ import {
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_BASE = "http://127.0.0.1:8005/api/v1";
-const WS_BASE = "ws://127.0.0.1:8005/api/v1/ws/jobs";
+const API_BASE = "/api/v1";
+const WS_BASE = `ws://${window.location.hostname}:${window.location.port}/api/v1/ws/jobs`;
 
 function App() {
   const [activeTab, setActiveTab] = useState('orchestrator');
@@ -630,25 +630,211 @@ function TwinView({ job }) {
   );
 }
 
-function RegulatoryView({ job }) {
-  const report = job?.metadata?.regulatory_report_draft || "Generating report...";
+const AGENCIES = [
+  { key: "csr",               label: "CSR — ICH E3",           flag: "🌐", lang: "en",  region: "Global / FDA" },
+  { key: "ectd",              label: "eCTD Module 5",           flag: "🇺🇸", lang: "en", region: "Global / FDA" },
+  { key: "cmc",               label: "CMC — Module 3",          flag: "🌐", lang: "en",  region: "Global / FDA" },
+  { key: "pv_narrative",      label: "PV Case Narrative",       flag: "🌐", lang: "en",  region: "Global / CIOMS" },
+  { key: "cofepris_registro", label: "Registro Sanitario",      flag: "🇲🇽", lang: "es", region: "COFEPRIS — México" },
+  { key: "cofepris_pv",       label: "Reporte PV",              flag: "🇲🇽", lang: "es", region: "COFEPRIS — México" },
+  { key: "anvisa_registro",   label: "Dossiê de Registro",      flag: "🇧🇷", lang: "pt", region: "ANVISA — Brasil" },
+  { key: "anmat_registro",    label: "Autorización Comercial",  flag: "🇦🇷", lang: "es", region: "ANMAT — Argentina" },
+  { key: "invima_registro",   label: "Registro Sanitario",      flag: "🇨🇴", lang: "es", region: "INVIMA — Colombia" },
+];
+
+function RegulatoryView() {
+  const [docType, setDocType]       = useState("cofepris_registro");
+  const [drugName, setDrugName]     = useState("dabrafenib");
+  const [indication, setIndication] = useState("melanoma metastásico BRAF V600E");
+  const [nctId, setNctId]           = useState("NCT01227889");
+  const [section, setSection]       = useState("");
+  const [loading, setLoading]       = useState(false);
+  const [draft, setDraft]           = useState(null);
+  const [error, setError]           = useState(null);
+
+  const selected = AGENCIES.find(a => a.key === docType) || AGENCIES[0];
+
+  const generate = async () => {
+    setLoading(true);
+    setDraft(null);
+    setError(null);
+    try {
+      const res = await axios.post(`${API_BASE}/pharma/draft`, {
+        document_type: docType,
+        drug_name: drugName,
+        indication,
+        nct_id: nctId || undefined,
+        section: section || undefined,
+      });
+      setDraft(res.data);
+    } catch (e) {
+      setError(e?.response?.data?.detail || e.message || "Request failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadPdf = async () => {
+    try {
+      const res = await axios.post(`${API_BASE}/pharma/draft/pdf`, {
+        document_type: docType,
+        drug_name: drugName,
+        indication,
+        nct_id: nctId || undefined,
+        section: section || undefined,
+      }, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ariston_${drugName.toLowerCase().replace(/\s+/g, "_")}_${docType}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError("PDF export failed");
+    }
+  };
+
   return (
     <div className="space-y-6">
-       <div className="flex justify-between items-center">
-         <div>
-            <h1 className="text-4xl font-bold text-white mb-2">Regulatory Copilot</h1>
-            <p className="text-slate-400">Autonomous GxP-compliant clinical and research documentation.</p>
-         </div>
-         <button className="px-4 py-2 bg-brand-accent text-slate-950 font-bold rounded-lg text-xs uppercase tracking-widest flex items-center space-x-2">
-            <ShieldCheck size={14} />
-            <span>Export for IRB</span>
-         </button>
+      {/* Header */}
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-4xl font-bold text-white mb-2">Regulatory Copilot</h1>
+          <p className="text-slate-400">AI-assisted drafting for FDA, COFEPRIS, ANVISA, ANMAT & INVIMA submissions.</p>
+        </div>
+        <div className="flex items-center space-x-2 px-3 py-1.5 bg-white/5 rounded-xl border border-white/10 text-xs text-brand-accent">
+          <ShieldCheck size={12} />
+          <span>GxP Audit Active</span>
+        </div>
       </div>
-      <div className="glass-card p-8 bg-slate-900 border-white/10 shadow-2xl overflow-y-auto max-h-[600px]">
-         <pre className="text-slate-300 font-mono text-sm whitespace-pre-wrap leading-relaxed">
-            {report}
-         </pre>
+
+      {/* Agency selector */}
+      <div className="glass-card p-5 space-y-4">
+        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Regulatory Agency & Document Type</p>
+        <div className="grid grid-cols-3 gap-2">
+          {AGENCIES.map(a => (
+            <button
+              key={a.key}
+              onClick={() => setDocType(a.key)}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                docType === a.key
+                  ? "border-brand-primary/50 bg-brand-primary/10 text-white"
+                  : "border-white/5 bg-white/2 text-slate-400 hover:bg-white/5"
+              }`}
+            >
+              <span className="text-lg mr-1">{a.flag}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wide block mt-1">{a.region}</span>
+              <span className="text-xs text-slate-300">{a.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Form */}
+      <div className="glass-card p-5 space-y-4">
+        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Compound & Indication</p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Drug / Compound</label>
+            <input
+              value={drugName}
+              onChange={e => setDrugName(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-brand-primary/50 outline-none"
+              placeholder="e.g. dabrafenib"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Indication</label>
+            <input
+              value={indication}
+              onChange={e => setIndication(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-brand-primary/50 outline-none"
+              placeholder="e.g. BRAF V600E metastatic melanoma"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">NCT ID (optional — grounds in live data)</label>
+            <input
+              value={nctId}
+              onChange={e => setNctId(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-brand-primary/50 outline-none"
+              placeholder="e.g. NCT01227889"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Section only (leave blank for full doc)</label>
+            <input
+              value={section}
+              onChange={e => setSection(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-brand-primary/50 outline-none"
+              placeholder="e.g. Synopsis"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+          <div className="text-xs text-slate-500">
+            Output language: <span className="text-brand-primary font-bold uppercase">{selected.lang === "es" ? "Español" : selected.lang === "pt" ? "Português" : "English"}</span>
+            &nbsp;·&nbsp;Agency: <span className="text-slate-300">{selected.region}</span>
+          </div>
+          <button
+            onClick={generate}
+            disabled={loading || !drugName || !indication}
+            className="medical-gradient px-8 py-2.5 rounded-xl font-semibold shadow-lg shadow-brand-primary/20 hover:scale-[1.02] transition-transform flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <>
+                <Activity className="w-4 h-4 animate-spin" />
+                <span>Drafting…</span>
+              </>
+            ) : (
+              <>
+                <FileText className="w-4 h-4" />
+                <span>Generate Draft</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="glass-card p-4 border-medical-red/30 bg-medical-red/5 text-medical-red text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Draft output */}
+      {draft && (
+        <div className="glass-card overflow-hidden">
+          {/* Meta bar */}
+          <div className="px-6 py-3 bg-white/3 border-b border-white/5 flex items-center justify-between">
+            <div className="flex items-center space-x-4 text-[10px] text-slate-500 uppercase font-bold tracking-widest">
+              <span>{selected.flag} {selected.region}</span>
+              <span>·</span>
+              <span>{draft.drug_name} — {draft.indication}</span>
+              {draft.nct_id && <><span>·</span><span className="text-brand-primary">{draft.nct_id}</span></>}
+              <span>·</span>
+              <span>{draft.sources_used} sources</span>
+              {draft.trial_data_used && <><span>·</span><span className="text-brand-accent">ClinicalTrials grounded</span></>}
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={downloadPdf}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-brand-accent/10 border border-brand-accent/20 text-brand-accent rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-brand-accent/20 transition-colors"
+              >
+                <FileText size={12} />
+                <span>Download PDF</span>
+              </button>
+            </div>
+          </div>
+          <div className="p-8 overflow-y-auto max-h-[600px]">
+            <pre className="text-slate-300 font-mono text-sm whitespace-pre-wrap leading-relaxed">
+              {draft.draft}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
