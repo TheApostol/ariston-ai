@@ -191,9 +191,9 @@ async def test_engine_returns_request_id():
     }
 
     with patch.object(eng.router, "run", new_callable=AsyncMock, return_value=mock_router_result), \
-         patch("vinci_core.engine.classifier.classify", new_callable=AsyncMock, return_value="clinical"), \
-         patch("vinci_core.engine.build_context", new_callable=AsyncMock, return_value={}), \
-         patch("vinci_core.engine.pharmacogenomics_agent.format_for_context", new_callable=AsyncMock, return_value=""), \
+         patch("vinci_core.engine_context.classifier.classify", new_callable=AsyncMock, return_value="clinical"), \
+         patch("vinci_core.engine_context.build_context", new_callable=AsyncMock, return_value={}), \
+         patch("vinci_core.engine_context.pharmacogenomics_agent.format_for_context", new_callable=AsyncMock, return_value=""), \
          patch("vinci_core.engine.benchmark_logger.evaluate_and_log"), \
          patch("vinci_core.engine.AristonAuditLedger.log_decision"):
         response = await eng.run(prompt="Patient has chest pain")
@@ -210,8 +210,8 @@ async def test_engine_does_not_expose_stack_trace():
     eng = Engine()
 
     with patch.object(eng.router, "run", new_callable=AsyncMock, side_effect=RuntimeError("secret db cred")), \
-         patch("vinci_core.engine.classifier.classify", new_callable=AsyncMock, return_value="general"), \
-         patch("vinci_core.engine.build_context", new_callable=AsyncMock, return_value={}):
+         patch("vinci_core.engine_context.classifier.classify", new_callable=AsyncMock, return_value="general"), \
+         patch("vinci_core.engine_context.build_context", new_callable=AsyncMock, return_value={}):
         response = await eng.run(prompt="test prompt")
 
     # Must not expose raw exception string

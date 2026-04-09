@@ -24,10 +24,7 @@ from typing import Optional
 from vinci_core.schemas import AIResponse
 from vinci_core.routing.model_router import ModelRouter
 from vinci_core.safety.guardrails import SafetyGuardrails, check_safety
-from vinci_core.context.builder import build_context
-from vinci_core.agent.classifier import classifier
-from vinci_core.agent.patient_agent import patient_agent
-from vinci_core.agent.genomics_agent import pharmacogenomics_agent
+from vinci_core.engine_context import build_request_context
 from vinci_core.evaluation.benchmark_logger import benchmark_logger
 from app.services.audit_ledger import AristonAuditLedger
 
@@ -57,43 +54,22 @@ class Engine:
         )
 
         try:
-            # 1. Input validation
-            valid, prompt, input_meta = SafetyGuardrails.validate_input(prompt)
+            # 1–5. Input validation, classification, patient history, PGx, RAG
+            valid, prompt, layer, enriched_context = await build_request_context(
+                prompt=prompt,
+                layer=layer,
+                context=context,
+                use_rag=use_rag,
+                patient_id=patient_id,
+                request_id=request_id,
+            )
             if not valid:
-                logger.warning(
-                    '{"event":"input_blocked","request_id":"%s"}',
-                    request_id,
-                )
                 return AIResponse(
                     model="vinci-safety",
                     content=prompt,
                     usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-                    metadata={"error": True, "safety": input_meta, "request_id": request_id},
+                    metadata={"error": True, "request_id": request_id},
                 )
-
-            # 2. Auto-classify layer if not provided
-            if not layer:
-                layer = await classifier.classify(prompt)
-
-            # 3. Patient history injection
-            if patient_id:
-                history = patient_agent.get_full_history(patient_id)
-                if history:
-                    context["patient_history"] = history
-
-            # 4. PGx grounding
-            drug_name = context.get("drug_name") or context.get("drug")
-            if drug_name:
-                pgx_text = await pharmacogenomics_agent.format_for_context(drug_name)
-                context["pharmacogenomics"] = pgx_text
-
-            # 5. RAG enrichment
-            enriched_context = await build_context(
-                prompt=prompt,
-                context=context,
-                layer=layer,
-                use_rag=use_rag,
-            )
 
             # 6. Model execution
             result = await self.router.run(
@@ -147,7 +123,7 @@ class Engine:
                 str(use_rag).lower(),
             )
 
-            # 9. Benchmark + audit (non-blocking; errors must not fail the request)
+            # 8. Benchmark + audit (non-blocking; errors must not fail the request)
             try:
                 benchmark_logger.evaluate_and_log(
                     prompt=prompt,

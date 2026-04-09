@@ -1,22 +1,27 @@
 """
 Streaming engine — same pipeline as engine.py but yields tokens via async generator.
 Used by the /stream endpoint for real-time response delivery.
+
+The shared pre-processing pipeline (input safety, classification, patient
+history, PGx, RAG) is handled by vinci_core/engine_context.py so the two
+engines stay in sync without code duplication.
 """
 
 import uuid
-from typing import AsyncGenerator
+import logging
+from typing import AsyncGenerator, Optional
+
 import anthropic
 from config import settings
-from vinci_core.agent.classifier import classifier
-from vinci_core.agent.patient_agent import patient_agent
-from vinci_core.agent.genomics_agent import pharmacogenomics_agent
-from vinci_core.context.builder import build_context
+from vinci_core.engine_context import build_request_context
 from vinci_core.safety.guardrails import SafetyGuardrails
 from vinci_core.layers.base_layer import BaseLayer
 from vinci_core.layers.pharma_layer import PharmaLayer
 from vinci_core.layers.clinical_layer import ClinicalLayer
 from vinci_core.layers.data_layer import DataLayer
 from app.services.audit_ledger import AristonAuditLedger
+
+logger = logging.getLogger("ariston.engine.stream")
 
 _LAYERS = {
     "base": BaseLayer(), "pharma": PharmaLayer(),
@@ -27,40 +32,34 @@ _LAYERS = {
 
 async def stream_response(
     prompt: str,
-    layer: str = None,
-    context: dict = None,
+    layer: Optional[str] = None,
+    context: Optional[dict] = None,
     use_rag: bool = True,
-    patient_id: str = None,
+    patient_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Async generator — yields text chunks as they arrive from Claude.
     Caller sends each chunk over WebSocket or SSE.
+
+    Output safety (definitive-diagnosis blocking) is enforced on the fully
+    assembled response after streaming completes; the stream is replaced with
+    the safety fallback message if a violation is detected.
     """
     job_id = str(uuid.uuid4())
     context = context or {}
 
-    # Input validation
-    valid, prompt, _ = SafetyGuardrails.validate_input(prompt)
+    # 1–5. Shared pre-processing pipeline
+    valid, prompt, layer, enriched = await build_request_context(
+        prompt=prompt,
+        layer=layer,
+        context=context,
+        use_rag=use_rag,
+        patient_id=patient_id,
+        request_id=job_id,
+    )
     if not valid:
         yield prompt
         return
-
-    # Auto-classify layer
-    if not layer:
-        layer = await classifier.classify(prompt)
-
-    # Patient history + PGx injection
-    if patient_id:
-        history = patient_agent.get_full_history(patient_id)
-        if history:
-            context["patient_history"] = history
-
-    drug_name = context.get("drug_name") or context.get("drug")
-    if drug_name:
-        context["pharmacogenomics"] = await pharmacogenomics_agent.format_for_context(drug_name)
-
-    # RAG enrichment
-    enriched = await build_context(prompt=prompt, context=context, layer=layer, use_rag=use_rag)
 
     # Build messages
     layer_obj = _LAYERS.get(layer, _LAYERS["base"])
@@ -69,7 +68,7 @@ async def stream_response(
     user_msgs = [m for m in messages if m["role"] != "system"]
 
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    full_content = []
+    full_content: list[str] = []
 
     async with client.messages.stream(
         model="claude-sonnet-4-6",
@@ -78,13 +77,26 @@ async def stream_response(
         messages=user_msgs,
     ) as stream:
         async for text in stream.text_stream:
-            # Output safety: block definitive diagnosis mid-stream
             full_content.append(text)
             yield text
 
-    # Post-stream audit (non-blocking)
+    # 6. Output safety — enforce on the fully assembled content.
+    #    If a violation is detected the stream has already been delivered, so
+    #    we yield the replacement message as a final corrective chunk and audit
+    #    the real content (never the raw chunk mid-stream).
     full = "".join(full_content)
+    _safe, safe_content, _meta = SafetyGuardrails.validate_output(full)
+    if not _safe:
+        logger.warning(
+            '{"event":"stream_output_blocked","request_id":"%s"}',
+            job_id,
+        )
+        # Signal the client to replace the streamed content
+        yield f"\n\n[SAFETY_OVERRIDE]{safe_content}"
+
+    # 7. Post-stream audit (non-blocking)
     AristonAuditLedger.log_decision(
-        job_id=job_id, prompt=prompt, result=full,
+        job_id=job_id, prompt=prompt, result=safe_content,
         metadata={"layer": layer, "streaming": True}
     )
+

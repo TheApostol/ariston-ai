@@ -45,8 +45,11 @@ async def _run_job(request: OrchestrateRequest, job_id: str):
         })
 
     except Exception as e:
-        logger.error(f"Job {job_id} failed: {e}")
-        await manager.broadcast(job_id, "failed", {"error": str(e)})
+        logger.error(
+            '{"event":"job_failed","job_id":"%s","error_type":"%s"}',
+            job_id, type(e).__name__,
+        )
+        await manager.broadcast(job_id, "failed", {"error": "Job processing failed. Please try again."})
 
 
 @router.post("/orchestrate", response_model=JobResponse)
