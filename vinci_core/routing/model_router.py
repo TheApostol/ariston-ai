@@ -26,7 +26,7 @@ from vinci_core.layers.pharma_layer import PharmaLayer
 from vinci_core.layers.clinical_layer import ClinicalLayer
 from vinci_core.layers.data_layer import DataLayer
 
-logger = logging.getLogger("ariston.model_router")
+logger = logging.getLogger("ariston.routing.model_router")
 
 _FALLBACK_ERROR_CONTENT = (
     "All model providers are currently unavailable. "

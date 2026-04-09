@@ -353,7 +353,8 @@ def test_benchmark_logger_writes_to_file(tmp_path):
     import json
     from vinci_core.evaluation.benchmark_logger import BenchmarkLogger
     log_file = str(tmp_path / "eval.jsonl")
-    original = BenchmarkLogger.LOG_FILE
+    original_log_dir = BenchmarkLogger.LOG_DIR
+    original_log_file = BenchmarkLogger.LOG_FILE
     BenchmarkLogger.LOG_DIR = str(tmp_path)
     BenchmarkLogger.LOG_FILE = log_file
 
@@ -374,9 +375,15 @@ def test_benchmark_logger_writes_to_file(tmp_path):
         # Confirm no sensitive data in logged entry
         assert "prompt" not in entry
         assert "response_content" not in entry
+        # confidence_score is excluded from disk to prevent sensitive data storage
+        assert "confidence_score" not in entry.get("metrics", {})
+        # These safe metrics are still present on disk
+        assert "grounding_score" in entry["metrics"]
+        assert "safety_score" in entry["metrics"]
+        assert "hallucination_risk" in entry["metrics"]
     finally:
-        BenchmarkLogger.LOG_DIR = "benchmarks"
-        BenchmarkLogger.LOG_FILE = original
+        BenchmarkLogger.LOG_DIR = original_log_dir
+        BenchmarkLogger.LOG_FILE = original_log_file
 
 
 # ── Provider timeout simulation ────────────────────────────────────────────────

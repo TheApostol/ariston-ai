@@ -18,7 +18,11 @@ from typing import Dict, Any
 
 logger = logging.getLogger("ariston.benchmark")
 
-# Phrases that suggest the model is fabricating specific facts
+#: Source attribution keywords that indicate RAG grounding was used effectively.
+_GROUNDING_SOURCE_INDICATORS = ("Source", "PubMed", "FDA", "ClinicalTrials")
+
+#: Keywords in the response that signal grounded (evidence-backed) content.
+_GROUNDING_RESPONSE_TOKENS = ("clinical", "evidence", "literature", "trial", "study")
 _HALLUCINATION_MARKERS = [
     "according to a study", "research shows", "data indicates",
     "the fda states", "clinicaltrials.gov reports", "a recent trial",
@@ -96,9 +100,9 @@ class BenchmarkLogger:
 
         # 1. Evidence grounding — did the model use retrieved knowledge?
         lower = response_content.lower()
-        if any(k in prompt for k in ["Source", "PubMed", "FDA", "ClinicalTrials"]):
+        if any(k in prompt for k in _GROUNDING_SOURCE_INDICATORS):
             grounding_score = 0.95 if any(
-                t in lower for t in ["clinical", "evidence", "literature", "trial", "study"]
+                t in lower for t in _GROUNDING_RESPONSE_TOKENS
             ) else 0.50
         else:
             grounding_score = 0.75  # no RAG context, neutral
@@ -150,12 +154,18 @@ class BenchmarkLogger:
     @classmethod
     def _write_log(cls, entry: Dict[str, Any]):
         # Whitelist only known-safe, non-sensitive fields before persisting.
+        # confidence_score is excluded from disk (derived from user input taint).
+        raw_metrics = entry.get("metrics") or {}
+        safe_metrics = {
+            k: v for k, v in raw_metrics.items()
+            if k in ("grounding_score", "safety_score", "hallucination_risk", "rag_used", "consensus")
+        }
         safe_entry = {
             "timestamp":   entry.get("timestamp"),
             "layer":       entry.get("layer"),
             "model":       entry.get("model"),
             "safety_flag": entry.get("safety_flag"),
-            "metrics":     entry.get("metrics"),
+            "metrics":     safe_metrics,
         }
         try:
             with open(cls.LOG_FILE, "a") as f:

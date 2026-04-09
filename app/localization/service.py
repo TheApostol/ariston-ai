@@ -23,6 +23,10 @@ SUPPORTED_LOCALES = {
     "en-US": "English (US)",
 }
 
+#: Placeholder confidence for AI translation (not a real quality score).
+#: TODO: replace with a real model-based quality estimate when scorer is available.
+_DEFAULT_TRANSLATION_CONFIDENCE: float = 0.92
+
 # ── Simple keyword-based language detection ───────────────────────────────────
 _PORTUGUESE_SIGNALS = [
     r"\bque\b", r"\bpara\b", r"\bcom\b", r"\bnão\b", r"\buma\b", r"\bem\b",
@@ -161,7 +165,7 @@ async def translate_text(
         "translated_text": response.content,
         "target_locale": target_locale,
         "source_locale": detected_source,
-        "confidence": 0.92,   # fixed domain-specific confidence; update when real quality scoring is available
+        "confidence": _DEFAULT_TRANSLATION_CONFIDENCE,
         "latency_ms": elapsed_ms,
         "character_count": len(text),
         "model": response.model,

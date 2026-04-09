@@ -79,7 +79,7 @@ async def _run_swarm_background(request: SwarmRequest, job_id: str):
         )
         await manager.broadcast(job_id, "completed", {"swarm_result": result})
     except Exception as e:
-        await manager.broadcast(job_id, "failed", {"error": str(e)})
+        await manager.broadcast(job_id, "failed", {"error": "Swarm job failed. Check server logs."})
 
 
 @router.post("/run/async")

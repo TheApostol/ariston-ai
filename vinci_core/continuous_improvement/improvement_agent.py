@@ -10,6 +10,7 @@ The agent:
 """
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -17,6 +18,8 @@ from typing import List, Optional
 from vinci_core.engine import engine
 from .benchmark_analyzer import analyze_benchmarks, get_low_scoring_patterns
 from .feedback_loop import get_unprocessed_signals, mark_signal_processed
+
+logger = logging.getLogger("ariston.improvement_agent")
 
 IMPROVEMENT_LOG = "benchmarks/improvement_log.jsonl"
 
@@ -26,8 +29,8 @@ def _write_log(entry: dict):
     try:
         with open(IMPROVEMENT_LOG, "a") as f:
             f.write(json.dumps(entry) + "\n")
-    except Exception as e:
-        print(f"[ImprovementAgent] Log write failed: {e}")
+    except Exception as exc:
+        logger.error("[ImprovementAgent] log write failed: %s", type(exc).__name__)
 
 
 def _build_improvement_prompt(
@@ -142,7 +145,7 @@ async def run_improvement_cycle(
         plan = json.loads(content)
     except Exception as e:
         plan = {
-            "error": f"Failed to parse improvement plan: {e}",
+            "error": f"Failed to parse improvement plan ({type(e).__name__}). Check server logs.",
             "raw_response": response.content[:500],
         }
 
@@ -163,8 +166,11 @@ async def run_improvement_cycle(
         for signal in signals:
             try:
                 mark_signal_processed(signal["id"])
-            except Exception as e:
-                print(f"[ImprovementAgent] Failed to mark signal {signal.get('id')}: {e}")
+            except Exception as exc:
+                logger.warning(
+                    "[ImprovementAgent] failed to mark signal %s: %s",
+                    signal.get("id"), type(exc).__name__,
+                )
 
     return {
         "status": "plan_generated",
@@ -188,8 +194,8 @@ def get_improvement_history(limit: int = 20) -> List[dict]:
                 line = line.strip()
                 if line:
                     entries.append(json.loads(line))
-    except Exception as e:
-        print(f"[ImprovementAgent] Failed to load history: {e}")
+    except Exception as exc:
+        logger.error("[ImprovementAgent] failed to load history: %s", type(exc).__name__)
         return []
     # Most recent first (slice first, then reverse — avoids reversing full list)
     return list(reversed(entries[-limit:]))
