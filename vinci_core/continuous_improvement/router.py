@@ -19,6 +19,7 @@ from typing import Optional
 from .benchmark_analyzer import analyze_benchmarks, get_low_scoring_patterns
 from .improvement_agent import run_improvement_cycle, get_improvement_history
 from .feedback_loop import submit_feedback, get_feedback_summary
+from .loop_scheduler import start_loop, stop_loop, get_loop_status, run_one_cycle
 
 router = APIRouter(prefix="/improvement", tags=["Autonomous Improvement Loop"])
 
@@ -198,3 +199,58 @@ async def metrics_dashboard():
 @router.get("/health")
 async def health():
     return {"status": "ok", "layer": "continuous_improvement"}
+
+
+# ── Continuous Loop Scheduler ─────────────────────────────────────────────────
+
+class LoopStartRequest(BaseModel):
+    interval_seconds: int = 3600    # default 1 hour; minimum 60
+
+
+@router.post("/loop/start")
+async def loop_start(request: LoopStartRequest):
+    """
+    Start the autonomous improvement loop.
+
+    The loop runs improvement cycles on the configured interval (default 1 hour):
+      1. Analyze benchmarks for low-scoring patterns
+      2. Collect unprocessed feedback signals
+      3. Generate LLM improvement plan
+      4. Log plan and mark signals processed
+
+    Minimum interval: 60 seconds (for testing).
+    """
+    return start_loop(interval_seconds=request.interval_seconds)
+
+
+@router.post("/loop/stop")
+async def loop_stop():
+    """
+    Stop the autonomous improvement loop after the current cycle completes.
+
+    Safe to call even if the loop is already stopped.
+    """
+    return stop_loop()
+
+
+@router.get("/loop/status")
+async def loop_status():
+    """
+    Get the current status of the autonomous improvement loop.
+
+    Returns running state, interval, cycle counts, last/next run timestamps.
+    """
+    return get_loop_status()
+
+
+@router.post("/loop/run-now")
+async def loop_run_now():
+    """
+    Manually trigger one improvement cycle immediately, independent of the loop schedule.
+
+    Thread-safe: waits for any currently-running cycle before executing.
+    """
+    try:
+        return await run_one_cycle()
+    except Exception:
+        return {"status": "error", "message": "Manual cycle failed. Check server logs."}

@@ -1,15 +1,20 @@
 """
 Individual Agent REST API — exposes DigitalTwin, IoMT, Regulatory Copilot,
-PGx, and Patient agents as standalone FastAPI endpoints.
+PGx, Patient, PharmacovigilanceNarrative, and SiteSelection agents as
+standalone FastAPI endpoints.
 
 Endpoints:
-  POST /agents/twin/simulate        — digital twin treatment simulation
-  POST /agents/iomt/adherence       — IoMT 30-day adherence forecast
-  POST /agents/pgx/cross-reference  — PGx gene/drug interaction check
-  POST /agents/regulatory/report    — GxP regulatory copilot report
-  GET  /agents/patient/{id}/history — patient longitudinal history
-  POST /agents/patient/{id}/record  — add patient record
-  GET  /agents/health               — health check
+  POST /agents/twin/simulate              — digital twin treatment simulation
+  POST /agents/iomt/adherence             — IoMT 30-day adherence forecast
+  POST /agents/pgx/cross-reference        — PGx gene/drug interaction check
+  POST /agents/regulatory/report          — GxP regulatory copilot report
+  GET  /agents/patient/{id}/history       — patient longitudinal history
+  POST /agents/patient/{id}/record        — add patient record
+  POST /agents/pv/narrative               — CIOMS / MedWatch narrative generation
+  POST /agents/pv/narrative/batch         — batch narrative generation
+  POST /agents/sites/recommend            — LatAm site selection recommendations
+  POST /agents/sites/feasibility          — multi-country feasibility summary
+  GET  /agents/health                     — health check
 """
 
 from fastapi import APIRouter
@@ -21,6 +26,8 @@ from vinci_core.agent.iomt_agent import iomt_agent
 from vinci_core.agent.genomics_agent import pharmacogenomics_agent
 from vinci_core.agent.regulatory_agent import regulatory_copilot
 from vinci_core.agent.patient_agent import patient_agent
+from vinci_core.agent.pv_narrative_agent import pv_narrative_agent
+from vinci_core.agent.site_selection_agent import site_selection_agent
 
 router = APIRouter(prefix="/agents", tags=["Individual Agents"])
 
@@ -54,6 +61,42 @@ class PatientRecordRequest(BaseModel):
     event_type: str
     details: str
     date: Optional[str] = None
+
+
+class PVNarrativeRequest(BaseModel):
+    """Adverse event data for CIOMS / MedWatch narrative generation."""
+    case_id: str
+    drug_name: str
+    dose: str
+    indication: str
+    ae_term: str                        # MedDRA preferred term
+    onset_date: str
+    outcome: str                        # "recovered" | "recovering" | "not recovered" | "fatal" | "unknown"
+    severity: str = "non-serious"       # see PharmacovigilanceNarrativeAgent.SEVERITY_MAP
+    patient_age: Optional[int] = None
+    patient_sex: Optional[str] = None
+    medical_history: Optional[str] = None
+    reporter_type: str = "physician"
+    narrative: Optional[str] = None
+    format: str = "both"                # "cioms" | "medwatch" | "both"
+
+
+class PVBatchRequest(BaseModel):
+    events: List[Dict[str, Any]]
+    format: str = "cioms"               # "cioms" | "medwatch" | "both"
+
+
+class SiteRecommendRequest(BaseModel):
+    therapeutic_area: str
+    agency: Optional[str] = None        # ANVISA | COFEPRIS | INVIMA | ANMAT
+    country: Optional[str] = None
+    top_n: int = 5
+    min_score: float = 40.0
+
+
+class SiteFeasibilityRequest(BaseModel):
+    therapeutic_area: str
+    agencies: Optional[List[str]] = None   # default: all 4 LatAm agencies
 
 
 # ── Digital Twin ──────────────────────────────────────────────────────────────
@@ -201,5 +244,106 @@ async def health():
         "available_agents": [
             "digital_twin", "iomt", "pharmacogenomics",
             "regulatory_copilot", "patient_history",
+            "pv_narrative", "site_selection",
         ],
     }
+
+
+# ── Pharmacovigilance Narrative ───────────────────────────────────────────────
+
+@router.post("/pv/narrative")
+async def pv_narrative(request: PVNarrativeRequest):
+    """
+    Generate a CIOMS-I and/or MedWatch adverse event narrative.
+
+    Format options:
+      - "cioms"    → CIOMS-I ICSR format
+      - "medwatch" → FDA 3500A equivalent
+      - "both"     → both formats in one response
+
+    Example:
+      POST /api/v1/agents/pv/narrative
+      {
+        "case_id": "AE-2024-001",
+        "drug_name": "semaglutide",
+        "dose": "1 mg weekly subcutaneous",
+        "indication": "Type 2 Diabetes",
+        "ae_term": "Pancreatitis",
+        "onset_date": "2024-03-15",
+        "outcome": "recovering",
+        "severity": "hospitalization",
+        "patient_age": 62,
+        "patient_sex": "male",
+        "format": "both"
+      }
+    """
+    event = request.model_dump(exclude={"format"})
+    fmt = request.format
+
+    if fmt == "medwatch":
+        return {"case_id": request.case_id, "medwatch": pv_narrative_agent.generate_medwatch(event)}
+    elif fmt == "both":
+        return {"case_id": request.case_id, **pv_narrative_agent.generate_both(event)}
+    else:
+        return {"case_id": request.case_id, "cioms": pv_narrative_agent.generate_cioms(event)}
+
+
+@router.post("/pv/narrative/batch")
+async def pv_narrative_batch(request: PVBatchRequest):
+    """
+    Generate narratives for a batch of adverse events.
+
+    Accepts a list of event dicts (same schema as /pv/narrative).
+    Returns a list of narratives keyed by case_id.
+
+    Example:
+      POST /api/v1/agents/pv/narrative/batch
+      { "events": [...], "format": "cioms" }
+    """
+    results = pv_narrative_agent.batch_generate(request.events, format=request.format)
+    return {
+        "total": len(results),
+        "format": request.format,
+        "narratives": results,
+    }
+
+
+# ── Site Selection ────────────────────────────────────────────────────────────
+
+@router.post("/sites/recommend")
+async def sites_recommend(request: SiteRecommendRequest):
+    """
+    Recommend the best LatAm clinical trial sites for a given therapeutic area.
+
+    Scoring (100-point scale):
+      Therapeutic area match (30) + Capacity (25) + Investigator tier (20)
+      + Approval speed (15) + Patient pool (10)
+
+    Example:
+      POST /api/v1/agents/sites/recommend
+      { "therapeutic_area": "oncology", "agency": "ANVISA", "top_n": 3 }
+    """
+    return site_selection_agent.recommend_sites(
+        therapeutic_area=request.therapeutic_area,
+        agency=request.agency,
+        country=request.country,
+        top_n=request.top_n,
+        min_score=request.min_score,
+    )
+
+
+@router.post("/sites/feasibility")
+async def sites_feasibility(request: SiteFeasibilityRequest):
+    """
+    Generate a multi-country LatAm feasibility summary for a therapeutic area.
+
+    Returns per-agency top site and an overall readiness tier (HIGH / MODERATE / LOW).
+
+    Example:
+      POST /api/v1/agents/sites/feasibility
+      { "therapeutic_area": "oncology" }
+    """
+    return site_selection_agent.feasibility_summary(
+        therapeutic_area=request.therapeutic_area,
+        agencies=request.agencies,
+    )
