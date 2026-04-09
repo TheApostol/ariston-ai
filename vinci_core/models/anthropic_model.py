@@ -1,5 +1,6 @@
 import anthropic
 from config import settings
+from vinci_core.utils.retry import async_retry
 
 
 class AnthropicModel:
@@ -8,6 +9,7 @@ class AnthropicModel:
     def __init__(self):
         self.client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
+    @async_retry(max_attempts=3, base_delay=1.0)
     async def generate(self, messages: list) -> dict:
         # Strip system messages — Anthropic uses a separate system param
         system_parts = [m["content"] for m in messages if m["role"] == "system"]

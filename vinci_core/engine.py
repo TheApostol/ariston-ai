@@ -13,7 +13,9 @@ Full pipeline per request:
   9. GxP audit ledger entry
 """
 
+import time
 import uuid
+import logging
 from vinci_core.schemas import AIResponse
 from vinci_core.routing.model_router import ModelRouter
 from vinci_core.safety.guardrails import SafetyGuardrails, check_safety
@@ -23,6 +25,8 @@ from vinci_core.agent.patient_agent import patient_agent
 from vinci_core.agent.genomics_agent import pharmacogenomics_agent
 from vinci_core.evaluation.benchmark_logger import benchmark_logger
 from app.services.audit_ledger import AristonAuditLedger
+
+logger = logging.getLogger("ariston.engine")
 
 
 class Engine:
@@ -38,18 +42,28 @@ class Engine:
         use_rag: bool = True,
         patient_id: str = None,
     ) -> AIResponse:
-        job_id = str(uuid.uuid4())
+        request_id = str(uuid.uuid4())
         context = context or {}
+        t_start = time.monotonic()
 
         try:
             # 1. Input validation
             valid, prompt, input_meta = SafetyGuardrails.validate_input(prompt)
             if not valid:
+                logger.warning(
+                    '{"event": "input_blocked", "request_id": "%s", "reason": "%s"}',
+                    request_id, input_meta.get("safety_flag"),
+                )
                 return AIResponse(
                     model="vinci-safety",
                     content=prompt,
                     usage=None,
-                    metadata={"error": True, "safety": input_meta},
+                    metadata={
+                        "error": True,
+                        "safety": input_meta,
+                        "request_id": request_id,
+                        "latency_ms": 0,
+                    },
                 )
 
             # 2. Auto-classify layer if not provided
@@ -82,6 +96,7 @@ class Engine:
                 model=model,
                 layer=layer,
                 context=enriched_context,
+                request_id=request_id,
             )
 
             # 7. Output safety validation
@@ -99,14 +114,28 @@ class Engine:
                 "total_tokens": raw_usage.get("total_tokens", 0),
             }
 
+            latency_ms = round((time.monotonic() - t_start) * 1000)
             metadata = result.get("metadata", {}) or {}
             metadata.update({
                 "safety": safety_meta,
                 "layer": layer,
-                "job_id": job_id,
+                "request_id": request_id,
+                "latency_ms": latency_ms,
                 "rag_used": use_rag,
                 "consensus": metadata.get("consensus", False),
+                "fallback_used": metadata.get("fallback_used", False),
             })
+
+            logger.info(
+                '{"event": "request_complete", "request_id": "%s", "model": "%s", '
+                '"layer": "%s", "latency_ms": %d, "fallback_used": %s, "safety_flag": "%s"}',
+                request_id,
+                result.get("model", "unknown"),
+                layer,
+                latency_ms,
+                str(metadata.get("fallback_used", False)).lower(),
+                safety_meta.get("flag", "SAFE"),
+            )
 
             response = AIResponse(
                 model=result.get("model", "unknown"),
@@ -123,7 +152,7 @@ class Engine:
                 layer=layer,
             )
             AristonAuditLedger.log_decision(
-                job_id=job_id,
+                job_id=request_id,
                 prompt=prompt,
                 result=content,
                 metadata=metadata,
@@ -131,12 +160,17 @@ class Engine:
 
             return response
 
-        except Exception as e:
+        except Exception as exc:
+            latency_ms = round((time.monotonic() - t_start) * 1000)
+            logger.error(
+                '{"event": "request_error", "request_id": "%s", "error": "%s", "latency_ms": %d}',
+                request_id, str(exc), latency_ms,
+            )
             return AIResponse(
                 model="vinci",
-                content=f"Internal error: {str(e)}",
+                content="An internal error occurred. Please try again.",
                 usage=None,
-                metadata={"error": True, "job_id": job_id},
+                metadata={"error": True, "request_id": request_id, "latency_ms": latency_ms},
             )
 
 

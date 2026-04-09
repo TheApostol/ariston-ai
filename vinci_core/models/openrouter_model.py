@@ -1,5 +1,6 @@
 import os
 import httpx
+from vinci_core.utils.retry import async_retry
 
 
 class OpenRouterModel:
@@ -14,6 +15,7 @@ class OpenRouterModel:
                 raise ValueError("Missing OPENROUTER_API_KEY")
         return self.api_key
 
+    @async_retry(max_attempts=3, base_delay=1.0)
     async def generate(self, messages=None, prompt=None):
         api_key = self.get_api_key()
 
