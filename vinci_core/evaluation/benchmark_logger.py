@@ -176,7 +176,6 @@ class BenchmarkLogger:
         safe_entry = {
             "timestamp":   entry.get("timestamp"),
             "layer":       entry.get("layer"),
-            "model":       entry.get("model"),
             "safety_flag": entry.get("safety_flag"),
             "metrics":     safe_metrics,
         }
