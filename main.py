@@ -11,13 +11,17 @@ from ariston_pharma.router import router as pharma_router
 from hippokron.router import router as hippokron_router
 from darwina.router import router as darwina_router
 from app.api.v1.endpoints.orchestration import router as orchestration_router
+from app.localization.router import router as localization_router
+from vinci_core.continuous_improvement.router import router as improvement_router
+from app.pilot_programs.router import router as pilots_router
 
 app = FastAPI(
     title="Ariston AI — Life Sciences Platform",
-    version="0.2.0",
+    version="0.3.0",
     description=(
         "AI orchestration engine for pharmaceutical regulatory intelligence, "
-        "clinical trial optimization, and real-world evidence analysis."
+        "clinical trial optimization, real-world evidence analysis, "
+        "and LatAm market launch."
     ),
 )
 
@@ -30,7 +34,16 @@ app.include_router(darwina_router, prefix="/api/v1/darwina")
 # Primary orchestration router (background jobs + WebSocket + audit)
 app.include_router(orchestration_router, prefix="/api/v1")
 
+# LatAm Localization Layer
+app.include_router(localization_router, prefix="/api/v1")
+
+# Autonomous Continuous Improvement Loop
+app.include_router(improvement_router, prefix="/api/v1")
+
+# LatAm Pilot Program Framework
+app.include_router(pilots_router, prefix="/api/v1")
+
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "platform": "Ariston AI", "version": "0.2.0"}
+    return {"status": "ok", "platform": "Ariston AI", "version": "0.3.0"}
