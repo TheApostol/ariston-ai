@@ -11,7 +11,6 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
-from google import genai
 from config import settings
 
 from vinci_core.models.base_model import BaseModel
@@ -27,7 +26,17 @@ class GeminiModel(BaseModel):
     name = "gemini"
 
     def __init__(self):
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self._client = None  # lazy-initialized
+
+    def _get_client(self):
+        if self._client is not None:
+            return self._client
+        try:
+            from google import genai  # lazy import — SDK optional
+            self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        except (ImportError, Exception) as e:
+            logger.warning("[gemini] client init failed: %s", e)
+        return self._client
 
     @async_retry(max_attempts=3, base_delay=1.5, exceptions=(Exception,))
     async def generate(
@@ -54,7 +63,9 @@ class GeminiModel(BaseModel):
             content = ""
 
         target_model = model or _DEFAULT_MODEL
-        client = self.client
+        client = self._get_client()
+        if not client:
+            return {"model": target_model, "content": "[Gemini unavailable — check GEMINI_API_KEY]", "usage": {}, "metadata": {"provider": "google", "error": "no_client"}}
 
         logger.debug("[gemini] calling model=%s content_len=%d", target_model, len(content))
 

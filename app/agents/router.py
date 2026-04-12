@@ -28,13 +28,17 @@ from vinci_core.agent.regulatory_agent import regulatory_copilot
 from vinci_core.agent.patient_agent import patient_agent
 from vinci_core.agent.pv_narrative_agent import pv_narrative_agent
 from vinci_core.agent.site_selection_agent import site_selection_agent
-from vinci_core.agent.pharmacist_agent import PharmacistAgent
-from vinci_core.agent.latam_agent import LatamRegulatoryAgent
-from vinci_core.agent.vision_agent import VisionRadiologyAgent
+def _get_pharmacist():
+    from vinci_core.agent.pharmacist_agent import PharmacistAgent
+    return PharmacistAgent()
 
-pharmacist_agent = PharmacistAgent()
-latam_regulatory_agent = LatamRegulatoryAgent()
-vision_agent = VisionRadiologyAgent()
+def _get_latam():
+    from vinci_core.agent.latam_agent import LatamRegulatoryAgent
+    return LatamRegulatoryAgent()
+
+def _get_vision():
+    from vinci_core.agent.vision_agent import VisionRadiologyAgent
+    return VisionRadiologyAgent()
 
 router = APIRouter(prefix="/agents", tags=["Individual Agents"])
 
@@ -370,7 +374,7 @@ async def pharmacist_review(request: PharmacistReviewRequest):
     Drug-drug interaction analysis, GxP label compliance, pharmacovigilance review.
     Powered by Gemini for fast pharmacological assessment.
     """
-    result = await pharmacist_agent.review_medications(
+    result = await _get_pharmacist().review_medications(
         prompt=request.prompt,
         context=request.context or {},
     )
@@ -393,7 +397,7 @@ async def latam_roadmap(request: LatamRoadmapRequest):
     Generate a multi-country LATAM regulatory roadmap.
     Covers ANVISA, COFEPRIS, INVIMA, ANMAT, ISP submission strategies.
     """
-    agent = latam_regulatory_agent
+    agent = _get_latam()
     countries = request.target_countries or ["brazil", "mexico", "colombia", "argentina", "chile"]
     existing = request.existing_approvals or []
     roadmap = agent.build_multi_country_roadmap(
@@ -424,7 +428,7 @@ async def vision_analyze(request: VisionAnalyzeRequest):
     Multimodal radiology scan analysis (Gemini 2.0 Flash).
     Outputs: Findings, Impression, Differential, Urgency Score.
     """
-    result = await vision_agent.analyze_scan(
+    result = await _get_vision().analyze_scan(
         prompt=request.prompt,
         images=request.images or [],
     )
