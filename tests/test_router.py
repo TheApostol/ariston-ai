@@ -1,10 +1,11 @@
 """
 Model router tests.
 
-The ModelRouter delegates to three strategies:
+The ModelRouter delegates to four strategies:
   - "consensus"  → ConsensusRouter  (clinical layer)
-  - "anthropic"  → AnthropicModel   (pharma / data / radiology)
-  - "openrouter" → OpenRouterModel  (base / general, fallback)
+  - "anthropic"  → AnthropicModel   (pharma / latam)
+  - "openai"     → OpenAIModel      (data layer)
+  - "gemini"     → GeminiModel      (radiology / base / general)
 
 Tests verify layer→strategy mapping via the layer_model_map dict.
 """
@@ -13,6 +14,7 @@ import pytest
 from vinci_core.routing.model_router import ModelRouter
 from vinci_core.models.anthropic_model import AnthropicModel
 from vinci_core.models.openrouter_model import OpenRouterModel
+from vinci_core.models.openai_model import OpenAIModel
 from vinci_core.routing.consensus_router import ConsensusRouter
 
 
@@ -28,28 +30,28 @@ def test_pharma_layer_uses_anthropic():
     assert strategy == "anthropic"
 
 
-def test_data_layer_uses_anthropic():
+def test_data_layer_uses_openai():
     router = ModelRouter()
     strategy = router.layer_model_map.get("data")
-    assert strategy == "anthropic"
+    assert strategy == "openai"
 
 
-def test_radiology_layer_uses_anthropic():
+def test_radiology_layer_uses_gemini():
     router = ModelRouter()
     strategy = router.layer_model_map.get("radiology")
-    assert strategy == "anthropic"
+    assert strategy == "gemini"
 
 
-def test_general_layer_uses_openrouter():
+def test_general_layer_uses_gemini():
     router = ModelRouter()
     strategy = router.layer_model_map.get("general")
-    assert strategy == "openrouter"
+    assert strategy == "gemini"
 
 
-def test_base_layer_uses_openrouter():
+def test_base_layer_uses_gemini():
     router = ModelRouter()
     strategy = router.layer_model_map.get("base")
-    assert strategy == "openrouter"
+    assert strategy == "gemini"
 
 
 def test_all_layers_have_model_map():
@@ -62,6 +64,7 @@ def test_router_has_required_provider_instances():
     router = ModelRouter()
     assert isinstance(router.anthropic, AnthropicModel)
     assert isinstance(router.openrouter, OpenRouterModel)
+    assert isinstance(router.openai, OpenAIModel)
     assert isinstance(router.consensus, ConsensusRouter)
 
 

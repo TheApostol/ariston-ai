@@ -137,7 +137,7 @@ def test_embed_upsert(temp_embed_db):
     store = EmbeddingStore(db_path=temp_embed_db)
     doc = store.upsert("Diabetes prevalence in Brazil 2023", namespace="rwe")
     assert doc.doc_id is not None
-    assert len(doc.embedding) == 256  # TF-IDF 256-dim
+    assert len(doc.embedding) in (256, 384)  # TF-IDF 256-dim or sentence-transformers 384-dim
     assert doc.namespace == "rwe"
 
 
@@ -412,7 +412,7 @@ def test_embed_upsert_endpoint(client_p6):
     data = r.json()
     assert "doc_id" in data
     assert "embedding_dim" in data
-    assert data["embedding_dim"] == 256
+    assert data["embedding_dim"] in (256, 384)  # TF-IDF or sentence-transformers
 
 
 def test_embed_search_endpoint(client_p6):

@@ -18,6 +18,7 @@ from app.api.v1.endpoints.phase4 import router as phase4_router
 from app.api.v1.endpoints.phase5 import router as phase5_router
 from app.api.v1.endpoints.phase6 import router as phase6_router
 from app.api.v1.endpoints.platform import router as platform_router
+from app.api.v1.endpoints.billing import router as billing_router
 from app.localization.router import router as localization_router
 from vinci_core.continuous_improvement.router import router as improvement_router
 from app.pilot_programs.router import router as pilots_router
@@ -74,6 +75,9 @@ app.include_router(phase6_router, prefix="/api/v1")
 
 # ── Platform Orchestration — Wire All Agents + Phases ─────────────────────
 app.include_router(platform_router, prefix="/api/v1")
+
+# ── Billing — Stripe checkout, webhooks, usage, plans ─────────────────────
+app.include_router(billing_router, prefix="/api/v1")
 
 # ── Platform: Autonomous Continuous Improvement Loop ──────────────────────
 app.include_router(improvement_router, prefix="/api/v1")

@@ -5,17 +5,18 @@ Layer → Model mapping:
   clinical  → ConsensusRouter (Sonnet + Haiku + arbiter)
   pharma    → Anthropic Sonnet
   latam     → Anthropic Sonnet (regulatory precision required)
-  data      → Anthropic Sonnet
-  radiology → Anthropic Sonnet
+  data      → OpenAI (analysis tasks)
+  radiology → Gemini (vision + clinical multimodal)
   general   → OpenRouter (free)
 
-Fallback chain: primary → OpenRouter → structured error response
+Fallback chain: primary → OpenRouter → Gemini → OpenAI → structured error response
 """
 
 import logging
 from vinci_core.models.anthropic_model import AnthropicModel
 from vinci_core.models.openrouter_model import OpenRouterModel
 from vinci_core.models.gemini_model import GeminiModel
+from vinci_core.models.openai_model import OpenAIModel
 from vinci_core.routing.consensus_router import ConsensusRouter
 from vinci_core.layers.base_layer import BaseLayer
 from vinci_core.layers.pharma_layer import PharmaLayer
@@ -31,6 +32,7 @@ class ModelRouter:
         self.anthropic = AnthropicModel()
         self.openrouter = OpenRouterModel()
         self.gemini = GeminiModel()
+        self.openai = OpenAIModel()
         self.consensus = ConsensusRouter()
 
         self.layers = {
@@ -48,7 +50,7 @@ class ModelRouter:
             "clinical":  "consensus",   # score: 10 — dual-model + arbiter
             "latam":     "anthropic",   # score: 8 — regulatory precision
             "pharma":    "anthropic",   # score: 8 — structured science
-            "data":      "gemini",      # score: 7 — analysis tasks
+            "data":      "openai",      # score: 7 — analysis tasks (GPT-4o-mini)
             "radiology": "gemini",      # score: 7 — vision + clinical (Gemini multimodal)
             "base":      "gemini",      # score: 5 — general purpose
             "general":   "gemini",      # score: 5 — general purpose
@@ -80,6 +82,8 @@ class ModelRouter:
                 result = await self.anthropic.generate(messages=messages)
             elif effective_model == "gemini":
                 result = await self.gemini.generate(messages=messages)
+            elif effective_model == "openai":
+                result = await self.openai.generate(messages=messages)
             else:
                 result = await self.openrouter.generate(messages=messages)
 
@@ -100,17 +104,27 @@ class ModelRouter:
                     result.setdefault("metadata", {})["fallback_used"] = True
                     result["metadata"]["fallback_reason"] = f"Primary: {e} | OpenRouter: {fe}"
                 except Exception as ge:
-                    logger.error("[Router] All providers failed. Gemini: %s", ge)
-                    return {
-                        "model": "vinci-fallback",
-                        "content": "All providers unavailable. Please retry.",
-                        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-                        "metadata": {
-                            "error": True,
-                            "fallback_used": True,
-                            "fallback_reason": f"Anthropic: {e} | OpenRouter: {fe} | Gemini: {ge}",
-                        },
-                    }
+                    logger.warning("[Router] Gemini also failed, fallback→OpenAI: %s", ge)
+                    try:
+                        result = await self.openai.generate(messages=messages)
+                        result.setdefault("metadata", {})["fallback_used"] = True
+                        result["metadata"]["fallback_reason"] = (
+                            f"Primary: {e} | OpenRouter: {fe} | Gemini: {ge}"
+                        )
+                    except Exception as oe:
+                        logger.error("[Router] All providers failed. OpenAI: %s", oe)
+                        return {
+                            "model": "vinci-fallback",
+                            "content": "All providers unavailable. Please retry.",
+                            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                            "metadata": {
+                                "error": True,
+                                "fallback_used": True,
+                                "fallback_reason": (
+                                    f"Primary: {e} | OpenRouter: {fe} | Gemini: {ge} | OpenAI: {oe}"
+                                ),
+                            },
+                        }
 
         result.setdefault("metadata", {})
         result["metadata"]["fallback_used"] = fallback_used

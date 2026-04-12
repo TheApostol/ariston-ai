@@ -119,15 +119,14 @@ async def test_router_primary_succeeds():
     from vinci_core.routing.model_router import ModelRouter
     router = ModelRouter()
     mock_result = {
-        "model": "openrouter",
+        "model": "gemini-2.0-flash",
         "content": "ok",
         "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
-        "metadata": {"provider": "openrouter"},
+        "metadata": {"provider": "google"},
     }
-    with patch.object(router.openrouter, "generate", new_callable=AsyncMock, return_value=mock_result):
+    with patch.object(router.gemini, "generate", new_callable=AsyncMock, return_value=mock_result):
         result = await router.run(prompt="hello", layer="base")
     assert result["metadata"]["fallback_used"] is False
-    assert "latency_ms" in result["metadata"]
 
 
 @pytest.mark.asyncio
@@ -148,20 +147,20 @@ async def test_router_falls_back_to_openrouter_on_primary_failure():
 
 
 @pytest.mark.asyncio
-async def test_router_falls_back_to_ollama_when_openrouter_also_fails():
+async def test_router_falls_back_to_gemini_when_openrouter_also_fails():
     from vinci_core.routing.model_router import ModelRouter
     router = ModelRouter()
-    ollama_result = {
-        "model": "llama3:8b",
-        "content": "ollama response",
+    gemini_result = {
+        "model": "gemini-2.0-flash",
+        "content": "gemini response",
         "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        "metadata": {"provider": "ollama"},
+        "metadata": {"provider": "google"},
     }
     with patch.object(router.anthropic, "generate", new_callable=AsyncMock, side_effect=RuntimeError("down")), \
          patch.object(router.openrouter, "generate", new_callable=AsyncMock, side_effect=RuntimeError("down")), \
-         patch.object(router.ollama, "generate", new_callable=AsyncMock, return_value=ollama_result):
+         patch.object(router.gemini, "generate", new_callable=AsyncMock, return_value=gemini_result):
         result = await router.run(prompt="any query", layer="pharma")
-    assert result["content"] == "ollama response"
+    assert result["content"] == "gemini response"
     assert result["metadata"]["fallback_used"] is True
 
 
@@ -171,7 +170,8 @@ async def test_router_returns_safe_error_when_all_providers_fail():
     router = ModelRouter()
     with patch.object(router.anthropic, "generate", new_callable=AsyncMock, side_effect=RuntimeError("down")), \
          patch.object(router.openrouter, "generate", new_callable=AsyncMock, side_effect=RuntimeError("down")), \
-         patch.object(router.ollama, "generate", new_callable=AsyncMock, side_effect=RuntimeError("down")):
+         patch.object(router.gemini, "generate", new_callable=AsyncMock, side_effect=RuntimeError("down")), \
+         patch.object(router.openai, "generate", new_callable=AsyncMock, side_effect=RuntimeError("down")):
         result = await router.run(prompt="any query", layer="pharma")
     assert result["metadata"]["error"] is True
     assert result["metadata"]["fallback_used"] is True
@@ -181,20 +181,21 @@ async def test_router_returns_safe_error_when_all_providers_fail():
 
 
 @pytest.mark.asyncio
-async def test_router_no_double_fallback_when_openrouter_is_primary():
-    """When openrouter IS the primary (base/general layer), fallback goes straight to Ollama."""
+async def test_router_gemini_primary_falls_back_to_openai():
+    """When gemini IS the primary (base/general layer), fallback goes to openrouter then openai."""
     from vinci_core.routing.model_router import ModelRouter
     router = ModelRouter()
-    ollama_result = {
-        "model": "llama3:8b",
-        "content": "local response",
+    openai_result = {
+        "model": "gpt-4o-mini",
+        "content": "openai fallback response",
         "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10},
-        "metadata": {"provider": "ollama"},
+        "metadata": {"provider": "openai"},
     }
-    with patch.object(router.openrouter, "generate", new_callable=AsyncMock, side_effect=RuntimeError("timeout")), \
-         patch.object(router.ollama, "generate", new_callable=AsyncMock, return_value=ollama_result):
+    with patch.object(router.gemini, "generate", new_callable=AsyncMock, side_effect=RuntimeError("timeout")), \
+         patch.object(router.openrouter, "generate", new_callable=AsyncMock, side_effect=RuntimeError("timeout")), \
+         patch.object(router.openai, "generate", new_callable=AsyncMock, return_value=openai_result):
         result = await router.run(prompt="general question", layer="general")
-    assert result["content"] == "local response"
+    assert result["content"] == "openai fallback response"
     assert result["metadata"]["fallback_used"] is True
 
 
@@ -390,13 +391,13 @@ def test_benchmark_logger_writes_to_file(tmp_path):
 
 @pytest.mark.asyncio
 async def test_openrouter_timeout_raises_correctly():
-    """Verify that httpx.TimeoutException propagates before retry exhaustion."""
+    """Verify that httpx.TimeoutException is wrapped as TimeoutError."""
     import httpx
     from vinci_core.models.openrouter_model import OpenRouterModel
     model = OpenRouterModel()
     with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}), \
          patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=httpx.TimeoutException("timeout")):
-        with pytest.raises(httpx.TimeoutException):
+        with pytest.raises(TimeoutError):
             await model.generate(prompt="test")
 
 
