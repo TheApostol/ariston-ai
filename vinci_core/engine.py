@@ -24,7 +24,10 @@ from vinci_core.agent.patient_agent import patient_agent
 from vinci_core.agent.genomics_agent import pharmacogenomics_agent
 from vinci_core.evaluation.benchmark_logger import benchmark_logger
 from vinci_core.observability.structured_logger import obs_logger, RequestTrace
-from app.services.audit_ledger import AristonAuditLedger
+from vinci_core.audit.gxp_trail import gxp_audit
+from vinci_core.sla.monitor import sla_monitor
+from vinci_core.billing.metering import usage_meter
+from vinci_core.webhooks.dispatcher import webhook_dispatcher
 
 
 class Engine:
@@ -126,11 +129,14 @@ class Engine:
                 response_metadata=metadata,
                 layer=layer,
             )
-            AristonAuditLedger.log_decision(
+            gxp_audit.log_event(
                 job_id=job_id,
                 prompt=prompt,
                 result=content,
                 metadata=metadata,
+                tenant_id=context.get("tenant_id", "default"),
+                layer=layer,
+                event_type="inference",
             )
 
             # 10. Structured observability trace
@@ -153,6 +159,43 @@ class Engine:
             obs_logger.emit(trace)
             metadata["latency_ms"] = latency_ms
 
+            # 11. SLA + usage metering (non-blocking, best-effort)
+            tenant_id = context.get("tenant_id", "global")
+            tier = context.get("tier", "standard")
+            try:
+                sla_monitor.record(
+                    latency_ms=latency_ms,
+                    success=True,
+                    tenant_id=tenant_id,
+                    endpoint="engine.run",
+                    layer=layer,
+                    rag_used=use_rag,
+                    rag_latency_ms=enriched_context.get("rag_latency_ms", 0.0) if isinstance(enriched_context, dict) else 0.0,
+                )
+                usage_meter.record(
+                    tenant_id=tenant_id,
+                    unit="api_calls",
+                    quantity=1,
+                    pipeline=layer,
+                    layer=layer,
+                    tier=tier,
+                )
+            except Exception:
+                pass
+
+            # 12. Emit webhook event (async, non-blocking)
+            try:
+                webhook_dispatcher.emit({
+                    "event": "pipeline.completed",
+                    "tenant_id": tenant_id,
+                    "job_id": job_id,
+                    "layer": layer,
+                    "latency_ms": latency_ms,
+                    "model": response.model,
+                }, background=True)
+            except Exception:
+                pass
+
             return response
 
         except Exception as e:
@@ -165,6 +208,16 @@ class Engine:
                 provider_errors=[str(e)],
             )
             obs_logger.emit(trace)
+            # Record failure in SLA
+            try:
+                sla_monitor.record(
+                    latency_ms=latency_ms,
+                    success=False,
+                    endpoint="engine.run",
+                    error_type=type(e).__name__,
+                )
+            except Exception:
+                pass
             return AIResponse(
                 model="vinci",
                 content=f"Internal error: {str(e)}",

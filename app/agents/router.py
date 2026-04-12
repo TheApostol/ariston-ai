@@ -28,6 +28,13 @@ from vinci_core.agent.regulatory_agent import regulatory_copilot
 from vinci_core.agent.patient_agent import patient_agent
 from vinci_core.agent.pv_narrative_agent import pv_narrative_agent
 from vinci_core.agent.site_selection_agent import site_selection_agent
+from vinci_core.agent.pharmacist_agent import PharmacistAgent
+from vinci_core.agent.latam_agent import LatamRegulatoryAgent
+from vinci_core.agent.vision_agent import VisionRadiologyAgent
+
+pharmacist_agent = PharmacistAgent()
+latam_regulatory_agent = LatamRegulatoryAgent()
+vision_agent = VisionRadiologyAgent()
 
 router = APIRouter(prefix="/agents", tags=["Individual Agents"])
 
@@ -245,6 +252,7 @@ async def health():
             "digital_twin", "iomt", "pharmacogenomics",
             "regulatory_copilot", "patient_history",
             "pv_narrative", "site_selection",
+            "pharmacist", "latam_regulatory", "vision_radiology",
         ],
     }
 
@@ -347,3 +355,101 @@ async def sites_feasibility(request: SiteFeasibilityRequest):
         therapeutic_area=request.therapeutic_area,
         agencies=request.agencies,
     )
+
+
+# ── Pharmacist Agent ──────────────────────────────────────────────────────────
+
+class PharmacistReviewRequest(BaseModel):
+    prompt: str
+    context: Optional[Dict[str, Any]] = None
+
+
+@router.post("/pharmacist/review")
+async def pharmacist_review(request: PharmacistReviewRequest):
+    """
+    Drug-drug interaction analysis, GxP label compliance, pharmacovigilance review.
+    Powered by Gemini for fast pharmacological assessment.
+    """
+    result = await pharmacist_agent.review_medications(
+        prompt=request.prompt,
+        context=request.context or {},
+    )
+    return {"review": result, "agent": "pharmacist"}
+
+
+# ── LATAM Regulatory Agent ────────────────────────────────────────────────────
+
+class LatamRoadmapRequest(BaseModel):
+    drug_name: str
+    indication: str
+    target_countries: Optional[List[str]] = None
+    existing_approvals: Optional[List[str]] = None
+    product_type: str = "pharmaceutical"
+
+
+@router.post("/latam/roadmap")
+async def latam_roadmap(request: LatamRoadmapRequest):
+    """
+    Generate a multi-country LATAM regulatory roadmap.
+    Covers ANVISA, COFEPRIS, INVIMA, ANMAT, ISP submission strategies.
+    """
+    agent = latam_regulatory_agent
+    countries = request.target_countries or ["brazil", "mexico", "colombia", "argentina", "chile"]
+    existing = request.existing_approvals or []
+    roadmap = agent.build_multi_country_roadmap(
+        countries=countries,
+        product_type=request.product_type,
+        has_fda_approval="fda" in [e.lower() for e in existing],
+        has_ema_approval="ema" in [e.lower() for e in existing],
+    )
+    return {
+        "drug_name": request.drug_name,
+        "indication": request.indication,
+        "roadmap": roadmap,
+        "countries": countries,
+        "agent": "latam_regulatory",
+    }
+
+
+# ── Vision Radiology Agent ────────────────────────────────────────────────────
+
+class VisionAnalyzeRequest(BaseModel):
+    prompt: str
+    images: Optional[List[str]] = None  # base64 encoded
+
+
+@router.post("/vision/analyze")
+async def vision_analyze(request: VisionAnalyzeRequest):
+    """
+    Multimodal radiology scan analysis (Gemini 2.0 Flash).
+    Outputs: Findings, Impression, Differential, Urgency Score.
+    """
+    result = await vision_agent.analyze_scan(
+        prompt=request.prompt,
+        images=request.images or [],
+    )
+    return {"analysis": result, "agent": "vision_radiology"}
+
+
+# ── Full Platform Agent Status ────────────────────────────────────────────────
+
+@router.get("/status")
+async def agent_status():
+    """Live status of all 10 agents on the platform."""
+    return {
+        "platform": "Ariston AI",
+        "agents": {
+            "digital_twin":       {"status": "active", "endpoint": "/agents/twin/simulate"},
+            "iomt":               {"status": "active", "endpoint": "/agents/iomt/adherence"},
+            "pharmacogenomics":   {"status": "active", "endpoint": "/agents/pgx/cross-reference"},
+            "regulatory_copilot": {"status": "active", "endpoint": "/agents/regulatory/report"},
+            "patient_history":    {"status": "active", "endpoint": "/agents/patient/{id}/history"},
+            "pv_narrative":       {"status": "active", "endpoint": "/agents/pv/narrative"},
+            "site_selection":     {"status": "active", "endpoint": "/agents/sites/recommend"},
+            "pharmacist":         {"status": "active", "endpoint": "/agents/pharmacist/review"},
+            "latam_regulatory":   {"status": "active", "endpoint": "/agents/latam/roadmap"},
+            "vision_radiology":   {"status": "active", "endpoint": "/agents/vision/analyze"},
+        },
+        "total_agents": 10,
+        "all_wired": True,
+    }

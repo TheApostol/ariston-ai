@@ -17,6 +17,7 @@ from app.api.v1.endpoints.phase3 import router as phase3_router
 from app.api.v1.endpoints.phase4 import router as phase4_router
 from app.api.v1.endpoints.phase5 import router as phase5_router
 from app.api.v1.endpoints.phase6 import router as phase6_router
+from app.api.v1.endpoints.platform import router as platform_router
 from app.localization.router import router as localization_router
 from vinci_core.continuous_improvement.router import router as improvement_router
 from app.pilot_programs.router import router as pilots_router
@@ -70,6 +71,9 @@ app.include_router(phase5_router, prefix="/api/v1")
 
 # ── Phase 6: Data Moat — LATAM + Embeddings + RWE Accumulation ───────────
 app.include_router(phase6_router, prefix="/api/v1")
+
+# ── Platform Orchestration — Wire All Agents + Phases ─────────────────────
+app.include_router(platform_router, prefix="/api/v1")
 
 # ── Platform: Autonomous Continuous Improvement Loop ──────────────────────
 app.include_router(improvement_router, prefix="/api/v1")

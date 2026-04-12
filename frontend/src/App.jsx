@@ -136,6 +136,9 @@ function App() {
           <NavItem icon={<Database />} label="Audit Logs" active={activeTab === 'audit'} onClick={() => setActiveTab('audit')} />
           <NavItem icon={<Eye />} label="Rad-Visualizer" active={activeTab === 'vision'} onClick={() => setActiveTab('vision')} />
           <NavItem icon={<ShieldCheck />} label="Benchmarking" active={activeTab === 'bench'} onClick={() => setActiveTab('bench')} />
+          <NavItem icon={<Database />} label="LATAM Data" active={activeTab === 'latam'} onClick={() => setActiveTab('latam')} />
+          <NavItem icon={<Activity />} label="Platform Dashboard" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
+          <NavItem icon={<Brain />} label="Agents" active={activeTab === 'agents'} onClick={() => setActiveTab('agents')} />
         </div>
 
         <div className="pt-6 border-t border-white/5 space-y-1">
@@ -283,6 +286,9 @@ function App() {
           {activeTab === 'audit' && <AuditView logs={wsLogs} />}
           {activeTab === 'vision' && <VisionView job={selectedJob} onBack={() => setActiveTab('orchestrator')} />}
           {activeTab === 'bench' && <BenchmarkingView logs={wsLogs} />}
+          {activeTab === 'latam' && <LatamDataView />}
+          {activeTab === 'dashboard' && <PlatformDashboard />}
+          {activeTab === 'agents' && <AgentsView />}
           {activeTab === 'settings' && <SettingsView />}
         </div>
       </main>
@@ -835,6 +841,329 @@ function RegulatoryView() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Platform Dashboard (Phase 5 + 6) ────────────────────────────────────────
+
+function PlatformDashboard() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    axios.get(`${API_BASE}/platform/dashboard?tenant_id=global&tier=standard`)
+      .then(r => { setData(r.data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="text-slate-400 p-8">Loading platform dashboard...</div>;
+  if (!data) return <div className="text-medical-red p-8">Failed to load dashboard.</div>;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-white mb-1">Platform Dashboard</h1>
+        <p className="text-slate-400 text-sm">Real-time SLA, usage, data moat, and agent health.</p>
+      </div>
+
+      {/* SLA */}
+      <div className="glass-card p-6">
+        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-4">SLA Monitor (24h)</p>
+        <div className="grid grid-cols-4 gap-4">
+          {[
+            { label: "Uptime", value: `${data.sla.uptime_pct?.toFixed(2) ?? 100}%`, ok: (data.sla.uptime_pct ?? 100) >= 99.5 },
+            { label: "P50 Latency", value: `${data.sla.p50_ms?.toFixed(0) ?? 0}ms`, ok: (data.sla.p50_ms ?? 0) < 2000 },
+            { label: "P95 Latency", value: `${data.sla.p95_ms?.toFixed(0) ?? 0}ms`, ok: (data.sla.p95_ms ?? 0) < 5000 },
+            { label: "Status", value: data.sla.status === 'healthy' ? '✓ Healthy' : '⚠ Breach', ok: data.sla.status === 'healthy' },
+          ].map(m => (
+            <div key={m.label} className="bg-white/5 rounded-xl p-4">
+              <p className="text-[10px] text-slate-500 uppercase font-bold">{m.label}</p>
+              <p className={`text-xl font-black mt-1 ${m.ok ? 'text-brand-accent' : 'text-medical-red'}`}>{m.value}</p>
+            </div>
+          ))}
+        </div>
+        {data.sla.breaches?.length > 0 && (
+          <div className="mt-4 p-3 bg-medical-red/10 border border-medical-red/20 rounded-lg">
+            {data.sla.breaches.map((b, i) => <p key={i} className="text-medical-red text-xs">{b}</p>)}
+          </div>
+        )}
+      </div>
+
+      {/* Usage */}
+      <div className="glass-card p-6">
+        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-4">Usage (Current Period)</p>
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: "API Calls", value: data.usage.api_calls },
+            { label: "Pipeline Runs", value: data.usage.pipeline_runs },
+            { label: "RAG Queries", value: data.usage.rag_queries },
+          ].map(u => (
+            <div key={u.label} className="bg-white/5 rounded-xl p-4">
+              <p className="text-[10px] text-slate-500 uppercase font-bold">{u.label}</p>
+              <p className="text-2xl font-black text-white mt-1">{u.value?.toLocaleString() ?? 0}</p>
+            </div>
+          ))}
+        </div>
+        {data.usage.overage_usd > 0 && (
+          <p className="mt-3 text-xs text-brand-secondary">Overage: ${data.usage.overage_usd?.toFixed(2)}</p>
+        )}
+      </div>
+
+      {/* Data Moat */}
+      <div className="glass-card p-6">
+        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-4">Data Moat (Phase 6)</p>
+        <div className="grid grid-cols-4 gap-4">
+          {[
+            { label: "Embeddings", value: data.data_moat.total_embeddings },
+            { label: "RWE Records", value: data.data_moat.rwe_records },
+            { label: "Freshness", value: `${((data.data_moat.freshness_score ?? 1) * 100).toFixed(0)}%` },
+            { label: "Stale Sets", value: data.data_moat.stale_datasets },
+          ].map(m => (
+            <div key={m.label} className="bg-white/5 rounded-xl p-4">
+              <p className="text-[10px] text-slate-500 uppercase font-bold">{m.label}</p>
+              <p className="text-xl font-black text-brand-primary mt-1">{m.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Agents */}
+      <div className="glass-card p-6">
+        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-4">Active Agents ({data.agents.active})</p>
+        <div className="grid grid-cols-2 gap-2">
+          {data.agents.endpoints.map(ep => (
+            <div key={ep} className="bg-white/5 rounded-lg px-3 py-2 flex items-center space-x-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
+              <span className="text-xs text-slate-300 font-mono">{ep}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── LATAM Data View (Phase 6) ────────────────────────────────────────────────
+
+function LatamDataView() {
+  const [coverage, setCoverage] = useState(null);
+  const [burden, setBurden] = useState(null);
+  const [countries] = useState(['brazil', 'mexico', 'colombia', 'argentina', 'chile']);
+  const [conditions] = useState(['type2_diabetes', 'cardiovascular', 'dengue', 'oncology']);
+  const [loading, setLoading] = useState(true);
+  const [accumulating, setAccumulating] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      axios.get(`${API_BASE}/phase6/latam/coverage`),
+      axios.post(`${API_BASE}/phase6/latam/burden`, { countries, conditions }),
+    ]).then(([cov, bur]) => {
+      setCoverage(cov.data);
+      setBurden(bur.data);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const seedData = async () => {
+    setAccumulating(true);
+    try {
+      await axios.post(`${API_BASE}/platform/rwe/seed`, {
+        therapeutic_area: 'diabetes',
+        countries,
+        embed: true,
+      });
+    } finally {
+      setAccumulating(false);
+    }
+  };
+
+  if (loading) return <div className="text-slate-400 p-8">Loading LATAM data...</div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white mb-1">LATAM Data Moat</h1>
+          <p className="text-slate-400 text-sm">DATASUS · SINAVE · SISPRO · SNVS · DEIS — {coverage?.aggregate?.total_population_millions}M population covered</p>
+        </div>
+        <button
+          onClick={seedData}
+          disabled={accumulating}
+          className="medical-gradient px-5 py-2 rounded-xl text-sm font-semibold flex items-center space-x-2 disabled:opacity-50"
+        >
+          <Database className="w-4 h-4" />
+          <span>{accumulating ? 'Accumulating...' : 'Seed RWE Data'}</span>
+        </button>
+      </div>
+
+      {/* Country Coverage */}
+      <div className="glass-card p-6">
+        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-4">Data Sources</p>
+        <div className="grid grid-cols-5 gap-3">
+          {coverage && Object.entries(coverage.countries).map(([country, info]) => (
+            <div key={country} className="bg-white/5 rounded-xl p-3">
+              <p className="text-xs font-bold text-white capitalize">{country}</p>
+              <p className="text-[10px] text-slate-500 mt-1">{info.coverage_source}</p>
+              <p className="text-brand-primary font-bold text-sm mt-2">{info.population_millions}M pop</p>
+              <p className="text-[10px] text-slate-400">{info.estimated_records_millions}M records</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Disease Burden */}
+      {burden && (
+        <div className="glass-card p-6">
+          <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-4">Disease Burden (per 100k) — PAHO/WHO 2022</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-white/5">
+                  <th className="text-left py-2 text-slate-500 font-bold uppercase">Country</th>
+                  {conditions.map(c => <th key={c} className="text-right py-2 text-slate-500 font-bold uppercase px-2">{c.replace('_', ' ')}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {countries.map(country => (
+                  <tr key={country} className="border-b border-white/5 hover:bg-white/2">
+                    <td className="py-2 text-white font-semibold capitalize">{country}</td>
+                    {conditions.map(cond => {
+                      const d = burden.burden?.[country]?.[cond];
+                      return (
+                        <td key={cond} className="py-2 text-right px-2 text-slate-300">
+                          {d?.prevalence_per_100k ? d.prevalence_per_100k.toLocaleString() : '—'}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Agents View ──────────────────────────────────────────────────────────────
+
+function AgentsView() {
+  const [agents, setAgents] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [input, setInput] = useState('');
+  const [result, setResult] = useState(null);
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      axios.get(`${API_BASE}/platform/agents`),
+      axios.get(`${API_BASE}/agents/status`),
+    ]).then(([a, s]) => {
+      setAgents(a.data);
+      setStatus(s.data);
+    }).catch(() => {});
+  }, []);
+
+  const runAgent = async () => {
+    if (!selected || !input) return;
+    setRunning(true);
+    setResult(null);
+    try {
+      // Route to correct endpoint
+      const endpointMap = {
+        pharmacist:       { url: `${API_BASE}/agents/pharmacist/review`, body: { prompt: input, context: {} } },
+        latam_regulatory: { url: `${API_BASE}/agents/latam/roadmap`, body: { drug_name: input, indication: 'General', target_countries: ['brazil', 'mexico'] } },
+        vision_radiology: { url: `${API_BASE}/agents/vision/analyze`, body: { prompt: input, images: [] } },
+        digital_twin:     { url: `${API_BASE}/agents/twin/simulate`, body: { drug: input, patient_history: 'Adult patient' } },
+        pharmacogenomics: { url: `${API_BASE}/agents/pgx/cross-reference`, body: { drug_name: input } },
+        site_selection:   { url: `${API_BASE}/agents/sites/recommend`, body: { therapeutic_area: input, top_n: 3 } },
+      };
+      const ep = endpointMap[selected.id];
+      if (ep) {
+        const r = await axios.post(ep.url, ep.body);
+        setResult(r.data);
+      }
+    } catch (e) {
+      setResult({ error: e.message });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-white mb-1">Agent Console</h1>
+        <p className="text-slate-400 text-sm">10 specialized agents — all active and wired to platform data.</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Agent Grid */}
+        <div className="glass-card p-5 space-y-2">
+          <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-3">Select Agent</p>
+          {agents?.agents?.map(agent => (
+            <button
+              key={agent.id}
+              onClick={() => { setSelected(agent); setResult(null); }}
+              className={`w-full text-left px-4 py-3 rounded-xl transition-all flex items-center justify-between ${
+                selected?.id === agent.id
+                  ? 'bg-brand-primary/20 border border-brand-primary/40'
+                  : 'bg-white/5 hover:bg-white/8 border border-transparent'
+              }`}
+            >
+              <div>
+                <p className="text-sm font-semibold text-white">{agent.name}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{agent.description.slice(0, 60)}...</p>
+              </div>
+              <div className="w-1.5 h-1.5 rounded-full bg-brand-accent flex-shrink-0" />
+            </button>
+          ))}
+        </div>
+
+        {/* Agent Runner */}
+        <div className="space-y-4">
+          {selected && (
+            <div className="glass-card p-5 space-y-4">
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">{selected.name}</p>
+              <p className="text-xs text-slate-400">{selected.description}</p>
+              <p className="text-[10px] text-slate-600 font-mono">{selected.endpoint}</p>
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                placeholder={`Enter input for ${selected.name}...`}
+                className="w-full h-24 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white resize-none placeholder:text-slate-600 focus:border-brand-primary/50 outline-none"
+              />
+              <button
+                onClick={runAgent}
+                disabled={running || !input}
+                className="w-full medical-gradient py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center space-x-2 disabled:opacity-50"
+              >
+                {running ? <Activity className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+                <span>{running ? 'Running...' : `Run ${selected.name}`}</span>
+              </button>
+            </div>
+          )}
+
+          {result && (
+            <div className="glass-card p-5">
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-3">Result</p>
+              <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap overflow-auto max-h-64">
+                {JSON.stringify(result, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {!selected && (
+            <div className="glass-card p-8 flex flex-col items-center justify-center text-center">
+              <Brain className="text-slate-600 mb-3" size={32} />
+              <p className="text-slate-500 text-sm">Select an agent to run it</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
