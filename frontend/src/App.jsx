@@ -29,6 +29,8 @@ function App() {
   const [wsLogs, setWsLogs] = useState([]);
   const [files, setFiles] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const ws = useRef(null);
 
@@ -89,59 +91,68 @@ function App() {
   };
 
   const submitOrchestration = async () => {
-    if (!prompt && files.length === 0) return;
+    const hasPrompt = prompt.trim().length > 0;
+    const hasFiles = files.length > 0;
+    if (!hasPrompt && !hasFiles) return;
 
-    // If files present, use the /upload multipart endpoint for full analysis
-    if (files.length > 0) {
+    setIsRunning(true);
+    setSubmitError(null);
+
+    // Files present → use /upload multipart endpoint for full analysis
+    if (hasFiles) {
       const formData = new FormData();
-      formData.append('prompt', prompt || 'Analyze this file and provide a full clinical report.');
-      formData.append('patient_id', patientId || '');
+      formData.append('prompt', prompt.trim() || 'Analyze this file and provide a full clinical report.');
+      if (patientId) formData.append('patient_id', patientId);
       formData.append('layer', activeTab === 'vision' ? 'radiology' : '');
-      files.forEach(f => formData.append('files', f.raw));
+      files.forEach(f => { if (f.raw) formData.append('files', f.raw); });
 
       const jobId = `upload_${Math.random().toString(36).substr(2, 8)}`;
-      setJobs(prev => [{ job_id: jobId, status: 'processing', prompt: prompt || `Analyzing ${files.length} file(s)`, timestamp: new Date().toISOString() }, ...prev]);
+      setJobs(prev => [{
+        job_id: jobId,
+        status: 'processing',
+        prompt: prompt.trim() || `Analyzing ${files.length} file(s)`,
+        timestamp: new Date().toISOString(),
+      }, ...prev]);
 
       try {
-        const response = await axios.post(`${API_BASE}/upload`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        const response = await axios.post(`${API_BASE}/upload`, formData);
         setJobs(prev => prev.map(j =>
-          j.job_id === jobId
-            ? { ...j, status: 'completed', result: response.data }
-            : j
+          j.job_id === jobId ? { ...j, status: 'completed', result: response.data } : j
         ));
         setSelectedJob({ job_id: jobId, status: 'completed', result: response.data, prompt });
         setActiveTab('vision');
       } catch (err) {
+        const msg = err.response?.data?.detail || err.message || 'Upload failed';
+        setSubmitError(msg);
         setJobs(prev => prev.map(j => j.job_id === jobId ? { ...j, status: 'failed' } : j));
-        console.error("Upload analysis failed", err);
+      } finally {
+        setFiles([]);
+        setPrompt('');
+        setIsRunning(false);
       }
-      setFiles([]);
-      setPrompt('');
       return;
     }
 
-    // No files — standard async orchestration via WebSocket
-    const requestData = {
-      prompt,
-      patient_id: patientId,
-      images: [],
-      fhir_bundle: [],
-      context: { layer: activeTab === 'vision' ? 'radiology' : 'clinical' },
-    };
-
+    // Text only → async orchestration, result via WebSocket
     try {
-      const response = await axios.post(`${API_BASE}/orchestrate`, requestData);
+      const response = await axios.post(`${API_BASE}/orchestrate`, {
+        prompt: prompt.trim(),
+        patient_id: patientId || null,
+        use_rag: true,
+        context: {},
+      });
       setJobs(prev => [{
         job_id: response.data.job_id,
         status: 'accepted',
-        prompt,
+        prompt: prompt.trim(),
         timestamp: new Date().toISOString(),
       }, ...prev]);
       setPrompt('');
-    } catch (error) {
-      console.error("Submission failed", error);
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Execution failed';
+      setSubmitError(msg);
+    } finally {
+      setIsRunning(false);
     }
   };
 
@@ -159,7 +170,7 @@ function App() {
         </div>
 
         <div className="space-y-1 flex-1">
-           <NavItem icon={<Brain />} label="Orchestrator" active={activeTab === 'orchestrator'} onClick={() => setActiveTab('orchestrator')} />
+           <NavItem icon={<Brain />} label="Execute" active={activeTab === 'orchestrator'} onClick={() => setActiveTab('orchestrator')} />
            <NavItem icon={<Activity />} label="Patient Timeline" active={activeTab === 'timeline'} onClick={() => setActiveTab('timeline')} />
            <NavItem icon={<Activity />} label="Digital Twin" active={activeTab === 'twin'} onClick={() => setActiveTab('twin')} />
            <NavItem icon={<FileText />} label="Regulatory" active={activeTab === 'reg'} onClick={() => setActiveTab('reg')} />
@@ -199,8 +210,8 @@ function App() {
                
                <div className="flex justify-between items-end">
                   <div>
-                    <h1 className="text-4xl font-bold text-white mb-2">Life Science Orchestrator</h1>
-                    <p className="text-slate-400">Execute clinical, pharma, and radiology agents through a unified OS layer.</p>
+                    <h1 className="text-4xl font-bold text-white mb-2">Ariston Execute</h1>
+                    <p className="text-slate-400">Run clinical, pharma, and radiology agents. Upload files for instant full analysis.</p>
                   </div>
                    <div className="px-4 py-2 glass-card flex items-center space-x-2 text-xs text-brand-accent">
                      <div className="w-2 h-2 rounded-full bg-brand-accent animate-pulse" />
@@ -264,9 +275,17 @@ function App() {
                     </div>
                   )}
 
+                  {submitError && (
+                    <div className="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs flex items-start space-x-2">
+                      <span className="font-bold">Error:</span>
+                      <span>{submitError}</span>
+                      <button onClick={() => setSubmitError(null)} className="ml-auto text-red-500 hover:text-red-300">×</button>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between pt-4 border-t border-white/5">
                     <div className="flex space-x-4">
-                       <label className="flex items-center space-x-2 cursor-pointer text-slate-400 hover:text-white transition-colors">
+                       <label className={`flex items-center space-x-2 cursor-pointer transition-colors ${isRunning ? 'opacity-40 cursor-not-allowed' : 'text-slate-400 hover:text-white'}`}>
                           <UploadCloud className="w-5 h-5" />
                           <span className="text-sm">Upload X-Ray / Scan / PDF / FHIR</span>
                           <input
@@ -274,15 +293,23 @@ function App() {
                             multiple
                             accept="image/*,.pdf,.json,.txt,.csv,.dcm"
                             className="hidden"
+                            disabled={isRunning}
                             onChange={handleFileUpload}
                           />
                        </label>
                     </div>
                     <button
                       onClick={submitOrchestration}
-                      className="medical-gradient px-8 py-2.5 rounded-xl font-semibold shadow-lg shadow-brand-primary/20 hover:scale-[1.02] transition-transform flex items-center space-x-2"
+                      disabled={isRunning || (!prompt.trim() && files.length === 0)}
+                      className="medical-gradient px-8 py-2.5 rounded-xl font-semibold shadow-lg shadow-brand-primary/20 hover:scale-[1.02] transition-transform flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                     >
-                      {files.length > 0 ? <><UploadCloud className="w-4 h-4" /><span>Analyze {files.length} File{files.length > 1 ? 's' : ''}</span></> : <><span>Orchestrate</span><ChevronRight className="w-4 h-4" /></>}
+                      {isRunning ? (
+                        <><Activity className="w-4 h-4 animate-spin" /><span>{files.length > 0 ? 'Analyzing...' : 'Executing...'}</span></>
+                      ) : files.length > 0 ? (
+                        <><UploadCloud className="w-4 h-4" /><span>Analyze {files.length} File{files.length > 1 ? 's' : ''}</span></>
+                      ) : (
+                        <><span>Execute</span><ChevronRight className="w-4 h-4" /></>
+                      )}
                     </button>
                   </div>
                </section>
