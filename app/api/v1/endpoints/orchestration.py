@@ -1,6 +1,8 @@
 """
 Primary orchestration API.
 - POST /orchestrate — submit a job (background, non-blocking)
+- POST /analyze    — synchronous full analysis (images + documents + prompt)
+- POST /upload     — multipart file upload → base64 → analysis
 - WebSocket /ws/jobs/{client_id} — real-time status
 - GET /health — provider health probe
 - GET /audit — GxP audit trail
@@ -10,14 +12,16 @@ Primary orchestration API.
 """
 
 import asyncio
+import base64
 import os
 import time
 import uuid
 import json
 import logging
 import httpx
-from fastapi import APIRouter, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, WebSocket, WebSocketDisconnect, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
+from typing import List, Optional
 from vinci_core.schemas import AIResponse
 from app.schemas.orchestration import OrchestrateRequest, JobResponse
 from app.core.websocket import manager
@@ -25,29 +29,66 @@ from app.services.audit_ledger import AristonAuditLedger
 from vinci_core.engine import engine
 from vinci_core.engine_stream import stream_response
 from vinci_core.agent.patient_agent import patient_agent
+from vinci_core.agent.vision_agent import VisionRadiologyAgent
 
 router = APIRouter()
 logger = logging.getLogger("ariston.api")
+
+_vision_agent = VisionRadiologyAgent()
+
+# MIME types that are treated as images for vision analysis
+_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/dicom"}
+# Document types for text extraction + RAG
+_DOC_TYPES = {"application/pdf", "application/json", "text/plain", "text/csv"}
 
 
 async def _run_job(request: OrchestrateRequest, job_id: str):
     try:
         await manager.broadcast(job_id, "processing")
 
+        result_data = {}
+
+        # --- Vision analysis if images present ---
+        images = request.images or []
+        if images:
+            await manager.broadcast(job_id, "processing", {"stage": "vision_analysis"})
+            vision_result = await _vision_agent.analyze_scan(
+                prompt=request.prompt,
+                images=images,
+            )
+            result_data["vision_analysis"] = vision_result
+
+        # --- Inject FHIR + document context ---
+        context = dict(request.context or {})
+        if request.fhir_bundle:
+            context["fhir_bundle"] = request.fhir_bundle
+        if request.documents:
+            context["documents"] = [
+                f"[{d.get('name', 'doc')}]: {d.get('content', '')[:2000]}"
+                for d in request.documents
+            ]
+
+        # --- Core engine (LLM + RAG + safety) ---
+        layer = request.layer
+        if images and not layer:
+            layer = "radiology"   # auto-route image requests to radiology layer
+
         response: AIResponse = await engine.run(
             prompt=request.prompt,
             model=request.model,
-            layer=request.layer,
-            context=request.context,
+            layer=layer,
+            context=context,
             use_rag=request.use_rag,
             patient_id=request.patient_id,
         )
 
-        await manager.broadcast(job_id, "completed", {
+        result_data.update({
             "content": response.content,
             "model": response.model,
             "metadata": response.metadata,
         })
+
+        await manager.broadcast(job_id, "completed", result_data)
 
     except Exception as e:
         logger.error(
@@ -63,6 +104,170 @@ async def orchestrate(request: OrchestrateRequest, background_tasks: BackgroundT
     job_id = str(uuid.uuid4())
     background_tasks.add_task(_run_job, request, job_id)
     return JobResponse(job_id=job_id, status="accepted")
+
+
+@router.post("/upload")
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    prompt: str = Form(default="Analyze this file and provide a full clinical report."),
+    patient_id: Optional[str] = Form(default=None),
+    layer: Optional[str] = Form(default=None),
+):
+    """
+    Multipart file upload endpoint.
+    Accepts: images (JPEG, PNG, DICOM), PDFs, FHIR JSON, lab reports, CSV.
+    Returns: synchronous full analysis — vision report + LLM + RAG.
+
+    Example (curl):
+      curl -X POST /api/v1/upload \\
+        -F "files=@xray.jpg" \\
+        -F "prompt=Analyze this chest X-ray for pneumonia" \\
+        -F "patient_id=ARISTON-001"
+    """
+    images = []
+    documents = []
+
+    for f in files:
+        raw = await f.read()
+        mime = f.content_type or "application/octet-stream"
+        name = f.filename or "uploaded_file"
+
+        if mime in _IMAGE_TYPES or name.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".dcm")):
+            b64 = base64.b64encode(raw).decode()
+            images.append(f"data:{mime};base64,{b64}")
+            logger.info("[upload] image file=%s mime=%s size=%d", name, mime, len(raw))
+
+        elif mime == "application/json" or name.endswith(".json"):
+            try:
+                content = raw.decode("utf-8")
+                documents.append({"name": name, "content": content, "type": "json"})
+            except Exception:
+                pass
+
+        elif mime == "text/plain" or name.endswith((".txt", ".csv")):
+            content = raw.decode("utf-8", errors="replace")
+            documents.append({"name": name, "content": content, "type": "text"})
+
+        elif mime == "application/pdf" or name.endswith(".pdf"):
+            # Extract text from PDF if pypdf available, else store as placeholder
+            try:
+                import io
+                from pypdf import PdfReader
+                reader = PdfReader(io.BytesIO(raw))
+                text = "\n".join(p.extract_text() or "" for p in reader.pages)
+                documents.append({"name": name, "content": text[:8000], "type": "pdf"})
+            except ImportError:
+                documents.append({"name": name, "content": f"[PDF: {name} — {len(raw)} bytes]", "type": "pdf"})
+
+        else:
+            # Unknown — try UTF-8 decode
+            try:
+                content = raw.decode("utf-8", errors="replace")[:4000]
+                documents.append({"name": name, "content": content, "type": "unknown"})
+            except Exception:
+                pass
+
+    # Auto-set layer
+    inferred_layer = layer
+    if not inferred_layer:
+        inferred_layer = "radiology" if images else "clinical"
+
+    # Build and run synchronously (for upload flow, user waits for result)
+    req = OrchestrateRequest(
+        prompt=prompt,
+        layer=inferred_layer,
+        patient_id=patient_id,
+        images=images,
+        documents=documents,
+        use_rag=True,
+    )
+
+    job_id = str(uuid.uuid4())
+    result: dict = {}
+
+    # Vision analysis
+    if images:
+        vision_result = await _vision_agent.analyze_scan(prompt=prompt, images=images)
+        result["vision_analysis"] = vision_result
+
+    # Engine analysis
+    context: dict = {}
+    if documents:
+        context["documents"] = [f"[{d['name']}]: {d['content'][:2000]}" for d in documents]
+
+    ai_response: AIResponse = await engine.run(
+        prompt=prompt,
+        layer=inferred_layer,
+        context=context,
+        use_rag=True,
+        patient_id=patient_id,
+    )
+
+    result.update({
+        "job_id": job_id,
+        "content": ai_response.content,
+        "model": ai_response.model,
+        "metadata": ai_response.metadata,
+        "files_processed": [f.filename for f in files],
+        "images_analyzed": len(images),
+        "documents_extracted": len(documents),
+        "layer": inferred_layer,
+    })
+
+    return result
+
+
+@router.post("/analyze")
+async def analyze(request: OrchestrateRequest):
+    """
+    Synchronous full analysis — blocks until complete.
+    Supports images (base64) + documents + prompt.
+    Use /orchestrate for async (WebSocket) flow.
+    Use /upload for multipart file uploads.
+    """
+    job_id = str(uuid.uuid4())
+    result: dict = {}
+
+    images = request.images or []
+    if images:
+        vision_result = await _vision_agent.analyze_scan(
+            prompt=request.prompt,
+            images=images,
+        )
+        result["vision_analysis"] = vision_result
+
+    context = dict(request.context or {})
+    if request.fhir_bundle:
+        context["fhir_bundle"] = request.fhir_bundle
+    if request.documents:
+        context["documents"] = [
+            f"[{d.get('name', 'doc')}]: {d.get('content', '')[:2000]}"
+            for d in request.documents
+        ]
+
+    layer = request.layer
+    if images and not layer:
+        layer = "radiology"
+
+    ai_response: AIResponse = await engine.run(
+        prompt=request.prompt,
+        model=request.model,
+        layer=layer,
+        context=context,
+        use_rag=request.use_rag,
+        patient_id=request.patient_id,
+    )
+
+    result.update({
+        "job_id": job_id,
+        "content": ai_response.content,
+        "model": ai_response.model,
+        "metadata": ai_response.metadata,
+        "images_analyzed": len(images),
+        "layer": layer,
+    })
+
+    return result
 
 
 @router.websocket("/ws/jobs/{client_id}")

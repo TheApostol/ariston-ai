@@ -70,44 +70,76 @@ function App() {
   const handleFileUpload = async (e) => {
     const rawFiles = Array.from(e.target.files);
     const processed = [];
-    
+
     for (const file of rawFiles) {
-      if (file.type.startsWith('image/')) {
+      if (file.type.startsWith('image/') || file.name.match(/\.(jpg|jpeg|png|webp|dcm)$/i)) {
         const b64 = await fileToBase64(file);
-        processed.push({ type: 'image', name: file.name, data: b64 });
+        processed.push({ type: 'image', name: file.name, data: b64, raw: file });
       } else if (file.name.endsWith('.json')) {
         const text = await file.text();
         try {
-          processed.push({ type: 'fhir', name: file.name, data: JSON.parse(text) });
-        } catch (e) { console.error("Invalid FHIR", e); }
+          processed.push({ type: 'fhir', name: file.name, data: JSON.parse(text), raw: file });
+        } catch (err) { console.error("Invalid JSON/FHIR", err); }
+      } else {
+        // PDF, CSV, TXT — keep raw file for FormData upload
+        processed.push({ type: 'document', name: file.name, data: null, raw: file });
       }
     }
     setFiles(prev => [...prev, ...processed]);
   };
 
   const submitOrchestration = async () => {
-    if (!prompt) return;
-    
+    if (!prompt && files.length === 0) return;
+
+    // If files present, use the /upload multipart endpoint for full analysis
+    if (files.length > 0) {
+      const formData = new FormData();
+      formData.append('prompt', prompt || 'Analyze this file and provide a full clinical report.');
+      formData.append('patient_id', patientId || '');
+      formData.append('layer', activeTab === 'vision' ? 'radiology' : '');
+      files.forEach(f => formData.append('files', f.raw));
+
+      const jobId = `upload_${Math.random().toString(36).substr(2, 8)}`;
+      setJobs(prev => [{ job_id: jobId, status: 'processing', prompt: prompt || `Analyzing ${files.length} file(s)`, timestamp: new Date().toISOString() }, ...prev]);
+
+      try {
+        const response = await axios.post(`${API_BASE}/upload`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setJobs(prev => prev.map(j =>
+          j.job_id === jobId
+            ? { ...j, status: 'completed', result: response.data }
+            : j
+        ));
+        setSelectedJob({ job_id: jobId, status: 'completed', result: response.data, prompt });
+        setActiveTab('vision');
+      } catch (err) {
+        setJobs(prev => prev.map(j => j.job_id === jobId ? { ...j, status: 'failed' } : j));
+        console.error("Upload analysis failed", err);
+      }
+      setFiles([]);
+      setPrompt('');
+      return;
+    }
+
+    // No files — standard async orchestration via WebSocket
     const requestData = {
-      prompt: prompt,
+      prompt,
       patient_id: patientId,
-      images: files.filter(f => f.type === 'image').map(f => f.data),
-      fhir_bundle: files.filter(f => f.type === 'fhir').map(f => f.data),
-      context: { layer: activeTab === 'vision' ? 'radiology' : 'clinical' }
+      images: [],
+      fhir_bundle: [],
+      context: { layer: activeTab === 'vision' ? 'radiology' : 'clinical' },
     };
-    
+
     try {
       const response = await axios.post(`${API_BASE}/orchestrate`, requestData);
-      
       setJobs(prev => [{
         job_id: response.data.job_id,
         status: 'accepted',
-        prompt: prompt,
-        timestamp: new Date().toISOString()
+        prompt,
+        timestamp: new Date().toISOString(),
       }, ...prev]);
-      
       setPrompt('');
-      setFiles([]);
     } catch (error) {
       console.error("Submission failed", error);
     }
@@ -219,20 +251,38 @@ function App() {
                     placeholder="Enter clinical query or patient context..."
                     className="w-full h-32 bg-transparent border-none focus:ring-0 text-lg resize-none placeholder:text-slate-600"
                   />
+                  {/* Uploaded files preview */}
+                  {files.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      {files.map((f, i) => (
+                        <div key={i} className="flex items-center space-x-2 bg-brand-primary/10 border border-brand-primary/20 rounded-lg px-3 py-1.5">
+                          {f.type === 'image' ? <Eye size={12} className="text-brand-primary" /> : <FileText size={12} className="text-brand-primary" />}
+                          <span className="text-[10px] text-slate-300">{f.name}</span>
+                          <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-slate-500 hover:text-medical-red text-xs">×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between pt-4 border-t border-white/5">
                     <div className="flex space-x-4">
                        <label className="flex items-center space-x-2 cursor-pointer text-slate-400 hover:text-white transition-colors">
                           <UploadCloud className="w-5 h-5" />
-                          <span className="text-sm">Upload Scan/Data</span>
-                          <input type="file" multiple className="hidden" onChange={handleFileUpload} />
+                          <span className="text-sm">Upload X-Ray / Scan / PDF / FHIR</span>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*,.pdf,.json,.txt,.csv,.dcm"
+                            className="hidden"
+                            onChange={handleFileUpload}
+                          />
                        </label>
                     </div>
-                    <button 
+                    <button
                       onClick={submitOrchestration}
                       className="medical-gradient px-8 py-2.5 rounded-xl font-semibold shadow-lg shadow-brand-primary/20 hover:scale-[1.02] transition-transform flex items-center space-x-2"
                     >
-                      <span>Orchestrate</span>
-                      <ChevronRight className="w-4 h-4" />
+                      {files.length > 0 ? <><UploadCloud className="w-4 h-4" /><span>Analyze {files.length} File{files.length > 1 ? 's' : ''}</span></> : <><span>Orchestrate</span><ChevronRight className="w-4 h-4" /></>}
                     </button>
                   </div>
                </section>
@@ -420,61 +470,93 @@ function VisionView({ job, onBack }) {
       </div>
       
       {!job ? (
-        <div className="glass-card aspect-video flex items-center justify-center border-dashed border-2 mt-12 text-slate-500">
-           No active scan selected. Upload a DICOM or MRI scan in the orchestrator.
+        <div className="glass-card aspect-video flex items-center justify-center border-dashed border-2 mt-12 text-slate-500 flex-col space-y-4">
+          <UploadCloud size={48} className="text-slate-700" />
+          <p>Upload an X-ray, CT, MRI, DICOM, PDF, or FHIR file in the Orchestrator tab.</p>
+          <p className="text-xs text-slate-600">Supported: JPG, PNG, DICOM, PDF, JSON (FHIR), CSV, TXT</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
-          <div className="glass-card aspect-square overflow-hidden bg-black flex items-center justify-center relative">
-             <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/50 backdrop-blur rounded text-[10px] font-mono text-brand-primary">
-                MODALITY: {meta.modality || "MRI"}
-             </div>
-             
-             {/* Saliency Overlay */}
-             {showSaliency && saliency && (
-               <motion.div 
-                 initial={{ opacity: 0, scale: 0.5 }}
-                 animate={{ opacity: 1, scale: 1 }}
-                 className="absolute z-20 pointer-events-none border-2 border-red-500 rounded-full shadow-[0_0_20px_rgba(239,68,68,0.8)] flex items-center justify-center"
-                 style={{ 
-                   left: `${saliency.coordinates?.x}px`, 
-                   top: `${saliency.coordinates?.y}px`,
-                   width: `${saliency.coordinates?.radius * 2}px`,
-                   height: `${saliency.coordinates?.radius * 2}px`
-                 }}
-               >
-                 <span className="bg-red-500 text-white text-[8px] font-bold px-1 rounded absolute -top-4">{saliency.label}</span>
-               </motion.div>
-             )}
+        <div className="space-y-6 mt-4">
+          {/* Files analyzed badge */}
+          {job.result?.files_processed && (
+            <div className="flex items-center space-x-3 flex-wrap gap-2">
+              {job.result.files_processed.map((fname, i) => (
+                <span key={i} className="px-3 py-1 bg-brand-primary/10 border border-brand-primary/20 rounded-full text-[10px] text-brand-primary font-mono">
+                  {fname}
+                </span>
+              ))}
+              <span className="text-xs text-slate-500">{job.result.images_analyzed} image(s) · {job.result.documents_extracted} doc(s)</span>
+            </div>
+          )}
 
-             {meta.images && meta.images.length > 0 ? (
-               <img src={meta.images[0]} className="w-full h-full object-contain opacity-80" alt="Medical Scan" />
-             ) : (
-               <div className="text-center p-8">
-                  <Activity className="w-12 h-12 text-brand-primary/30 mx-auto mb-4 animate-pulse" />
-                  <p className="text-slate-600 font-mono text-xs">Simulating reconstruction...</p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Image panel */}
+            <div className="glass-card aspect-square overflow-hidden bg-black flex items-center justify-center relative">
+               <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/50 backdrop-blur rounded text-[10px] font-mono text-brand-primary">
+                  LAYER: {job.result?.layer?.toUpperCase() || meta.layer?.toUpperCase() || "RADIOLOGY"}
                </div>
-             )}
-          </div>
-          <div className="space-y-6">
-             <div className="glass-card p-6 border-l-4 border-brand-primary">
-                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                   <FileText className="text-brand-primary" />
-                   Grounded Clinical Report
+               {showSaliency && saliency && (
+                 <motion.div
+                   initial={{ opacity: 0, scale: 0.5 }}
+                   animate={{ opacity: 1, scale: 1 }}
+                   className="absolute z-20 pointer-events-none border-2 border-red-500 rounded-full shadow-[0_0_20px_rgba(239,68,68,0.8)] flex items-center justify-center"
+                   style={{
+                     left: `${saliency.coordinates?.x}px`,
+                     top: `${saliency.coordinates?.y}px`,
+                     width: `${saliency.coordinates?.radius * 2}px`,
+                     height: `${saliency.coordinates?.radius * 2}px`,
+                   }}
+                 >
+                   <span className="bg-red-500 text-white text-[8px] font-bold px-1 rounded absolute -top-4">{saliency.label}</span>
+                 </motion.div>
+               )}
+               {meta.images && meta.images.length > 0 ? (
+                 <img src={meta.images[0]} className="w-full h-full object-contain opacity-80" alt="Medical Scan" />
+               ) : (
+                 <div className="text-center p-8">
+                   <Activity className="w-12 h-12 text-brand-primary/30 mx-auto mb-4 animate-pulse" />
+                   <p className="text-slate-600 font-mono text-xs">Analysis complete — no image preview available</p>
+                 </div>
+               )}
+            </div>
+
+            {/* Report panel */}
+            <div className="space-y-4">
+              {/* Vision analysis */}
+              {job.result?.vision_analysis && (
+                <div className="glass-card p-5 border-l-4 border-brand-accent">
+                  <h3 className="text-sm font-bold mb-3 flex items-center gap-2 text-brand-accent">
+                    <Eye size={14} /> Vision Analysis (Gemini 2.0 Flash)
+                  </h3>
+                  <div className="text-slate-300 text-xs leading-relaxed max-h-48 overflow-y-auto pr-2 whitespace-pre-wrap font-mono">
+                    {job.result.vision_analysis}
+                  </div>
+                </div>
+              )}
+
+              {/* AI clinical report */}
+              <div className="glass-card p-5 border-l-4 border-brand-primary">
+                <h3 className="text-sm font-bold mb-3 flex items-center gap-2">
+                  <FileText size={14} className="text-brand-primary" /> Clinical Report (RAG-Grounded)
                 </h3>
-                <div className="space-y-4 text-slate-300 text-sm leading-relaxed max-h-[400px] overflow-y-auto pr-4">
-                   {job.result?.content ? job.result.content.split('\n').map((line, i) => <p key={i}>{line}</p>) : "No report content available."}
+                <div className="text-slate-300 text-sm leading-relaxed max-h-64 overflow-y-auto pr-2">
+                  {job.result?.content
+                    ? job.result.content.split('\n').map((line, i) => <p key={i} className="mb-1">{line}</p>)
+                    : <p className="text-slate-500">No report available.</p>}
                 </div>
-             </div>
-             <div className="glass-card p-6">
-                <h3 className="text-lg font-bold mb-4">Pipeline Intelligence</h3>
-                <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-                   <div className="p-3 bg-white/5 rounded">SAFETY: {meta.safety_flag || "PASS"}</div>
-                   <div className="p-3 bg-white/5 rounded">GROUNDING: {meta.grounding_score || "0.95"}</div>
-                   <div className="p-3 bg-white/5 rounded">TRUST: {meta.confidence || "0.92"}</div>
-                   <div className="p-3 bg-white/5 rounded">COT: {meta.reflection_traces ? "ENABLED" : "NONE"}</div>
+              </div>
+
+              {/* Pipeline metadata */}
+              <div className="glass-card p-4">
+                <p className="text-[10px] text-slate-500 uppercase font-bold mb-3">Pipeline</p>
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                  <div className="p-2 bg-white/5 rounded">MODEL: {job.result?.model || meta.model_used || '—'}</div>
+                  <div className="p-2 bg-white/5 rounded">LAYER: {job.result?.layer || '—'}</div>
+                  <div className="p-2 bg-white/5 rounded">SAFETY: {meta.safety?.flag || 'SAFE'}</div>
+                  <div className="p-2 bg-white/5 rounded">LATENCY: {meta.latency_ms ? `${meta.latency_ms}ms` : '—'}</div>
                 </div>
-             </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
