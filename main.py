@@ -15,6 +15,8 @@ from app.api.v1.endpoints.latam import router as latam_router
 from app.api.v1.endpoints.phase2 import router as phase2_router
 from app.api.v1.endpoints.phase3 import router as phase3_router
 from app.api.v1.endpoints.phase4 import router as phase4_router
+from app.api.v1.endpoints.phase5 import router as phase5_router
+from app.api.v1.endpoints.phase6 import router as phase6_router
 from app.localization.router import router as localization_router
 from vinci_core.continuous_improvement.router import router as improvement_router
 from app.pilot_programs.router import router as pilots_router
@@ -24,13 +26,15 @@ from vinci_core.rwe.router import router as rwe_router
 
 app = FastAPI(
     title="Ariston AI — Life Sciences Platform",
-    version="0.6.0",
+    version="0.7.0",
     description=(
         "AI OS layer for Life Sciences. "
         "Phase 1: LATAM regulatory intelligence (ANVISA/COFEPRIS/INVIMA/ANMAT/ISP). "
         "Phase 2: Real-World Evidence, Pharmacovigilance, CSR generation. "
         "Phase 3: Drug discovery AI, biomarker discovery, clinical trial intelligence, FDA 510(k), international expansion. "
         "Phase 4: GxP audit trail, agent memory, multi-tenant RBAC, webhook events. "
+        "Phase 5: Revenue infrastructure — billing, Stripe, SLA monitoring, customer portal. "
+        "Phase 6: Data moat — LATAM connectors, semantic embeddings, RWE accumulation flywheel. "
         "Multi-agent swarm, composable pipelines, RAG-enriched responses."
     ),
 )
@@ -61,6 +65,12 @@ app.include_router(phase3_router, prefix="/api/v1")
 # ── Phase 4: GxP Audit + Agent Memory + RBAC + Webhooks ───────────────────
 app.include_router(phase4_router, prefix="/api/v1")
 
+# ── Phase 5: Revenue Infrastructure ───────────────────────────────────────
+app.include_router(phase5_router, prefix="/api/v1")
+
+# ── Phase 6: Data Moat — LATAM + Embeddings + RWE Accumulation ───────────
+app.include_router(phase6_router, prefix="/api/v1")
+
 # ── Platform: Autonomous Continuous Improvement Loop ──────────────────────
 app.include_router(improvement_router, prefix="/api/v1")
 
@@ -70,7 +80,7 @@ async def health():
     return {
         "status": "ok",
         "platform": "Ariston AI",
-        "version": "0.6.0",
+        "version": "0.7.0",
         "roadmap": {
             "phase1": {
                 "status": "active",
@@ -113,6 +123,28 @@ async def health():
                     "agent_persistent_memory",
                     "multi_tenant_rbac",
                     "webhook_event_system",
+                ],
+            },
+            "phase5": {
+                "status": "active",
+                "focus": "Revenue Infrastructure",
+                "capabilities": [
+                    "usage_metering_per_tenant",
+                    "stripe_subscription_billing",
+                    "sla_monitoring_p50_p95_uptime",
+                    "customer_portal_dashboard",
+                    "overage_billing_enforcement",
+                ],
+            },
+            "phase6": {
+                "status": "active",
+                "focus": "Data Moat",
+                "capabilities": [
+                    "latam_data_connectors_DATASUS_SINAVE_SISPRO_SNVS_DEIS",
+                    "semantic_embedding_search_cosine_similarity",
+                    "rwe_accumulation_pipeline_freshness_monitor",
+                    "disease_burden_paho_who_estimates",
+                    "data_flywheel_rwe_to_biomarker_to_drug_discovery",
                 ],
             },
         },
