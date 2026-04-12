@@ -1,15 +1,16 @@
 """
-Phase 3 API — Clinical Trial Intelligence + FDA 510(k) Preparation / Ariston AI.
+Phase 3 API — Clinical Trial Intelligence + FDA 510(k) + Drug Discovery + International Regulatory.
 
 Phase 3 capabilities:
-  - /api/v1/phase3/trial/analyze    — LATAM clinical trial intelligence (protocol → sites → patients → timeline → risks)
-  - /api/v1/phase3/fda510k/prepare  — FDA 510(k) premarket notification package generation
-  - /api/v1/phase3/fda510k/predicates — Known cleared AI predicates reference list
-
-Phase 3 roadmap milestones:
-  - Biomarker discovery AI (leverages RWE from Phase 2)
-  - Clinical decision support (510(k) pathway)
-  - International expansion beyond LATAM
+  - /api/v1/phase3/trial/analyze         — LATAM clinical trial intelligence
+  - /api/v1/phase3/trial/authorities     — LATAM regulatory authority reference
+  - /api/v1/phase3/fda510k/prepare       — FDA 510(k) premarket notification package
+  - /api/v1/phase3/fda510k/predicates    — Cleared AI predicate database
+  - /api/v1/phase3/drug/targets          — AI drug target identification (OpenTargets + PubMed)
+  - /api/v1/phase3/drug/repurposing      — Drug repurposing signal discovery
+  - /api/v1/phase3/regulatory/expand     — International regulatory gap analysis (EMA/PMDA/MHRA/TGA)
+  - /api/v1/phase3/regulatory/authorities — International authority registry
+  - /api/v1/phase3/regulatory/ich        — ICH guideline applicability matrix
 """
 
 from __future__ import annotations
@@ -21,8 +22,14 @@ from typing import Optional
 from vinci_core.workflows.pipeline import PipelineContext
 from vinci_core.workflows.clinical_trial_pipeline import clinical_trial_pipeline, _LATAM_TRIAL_AUTHORITIES
 from vinci_core.workflows.fda_510k_pipeline import fda_510k_pipeline, _KNOWN_AI_PREDICATES
+from vinci_core.drug_discovery.engine import drug_discovery_engine
+from vinci_core.regulatory.international import (
+    international_regulatory_engine,
+    INTERNATIONAL_AUTHORITIES,
+    ICH_GUIDELINES,
+)
 
-router = APIRouter(prefix="/phase3", tags=["Phase 3 — Clinical Trials + FDA 510(k)"])
+router = APIRouter(prefix="/phase3", tags=["Phase 3 — Drug Discovery + Trials + Regulatory"])
 
 
 # ---------------------------------------------------------------------------
@@ -203,4 +210,228 @@ async def get_known_ai_predicates(indication: Optional[str] = None):
         "predicates": _KNOWN_AI_PREDICATES,
         "total": len(_KNOWN_AI_PREDICATES),
         "note": "Curated subset. Full database: 1,250+ cleared AI algorithms at accessdata.fda.gov",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Drug Discovery AI
+# ---------------------------------------------------------------------------
+
+class DrugTargetRequest(BaseModel):
+    disease_area: str = Field(..., description="Disease area: type2_diabetes | chagas_disease | dengue | cardiovascular | oncology | leishmaniasis")
+    countries: Optional[list[str]] = Field(None, description="LATAM countries for disease burden context")
+    max_targets: int = Field(3, ge=1, le=5, description="Number of targets to return")
+    use_opentargets: bool = Field(True, description="Enrich with Open Targets Platform live data")
+    use_pubmed: bool = Field(True, description="Enrich with PubMed literature evidence")
+
+
+class RepurposingRequest(BaseModel):
+    disease_area: str = Field(..., description="Target disease area for repurposing")
+    existing_drug: Optional[str] = Field(None, description="Specific drug to check for repurposing signals")
+    countries: Optional[list[str]] = Field(None, description="LATAM markets for prioritization")
+
+
+@router.post("/drug/targets")
+async def identify_drug_targets(req: DrugTargetRequest):
+    """
+    AI Drug Target Identification.
+
+    Combines:
+    - Curated LATAM target database (gene → protein → disease)
+    - Open Targets Platform (real-time: drug/target → disease associations)
+    - PubMed literature mining (RAG-enriched evidence synthesis)
+    - AI mechanistic analysis with LATAM disease burden context
+
+    Returns ranked TargetHypothesis objects with druggability,
+    development precedence, recommended modalities, and economics.
+    """
+    try:
+        hypotheses = await drug_discovery_engine.identify_targets(
+            disease_area=req.disease_area,
+            countries=req.countries or [],
+            max_targets=req.max_targets,
+            use_opentargets=req.use_opentargets,
+            use_pubmed=req.use_pubmed,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Drug discovery engine error: {e}")
+
+    return {
+        "disease_area": req.disease_area,
+        "targets": [
+            {
+                "hypothesis_id": h.hypothesis_id,
+                "gene_symbol": h.gene_symbol,
+                "protein_name": h.protein_name,
+                "druggability": h.druggability,
+                "development_precedence": h.development_precedence,
+                "recommended_modalities": h.recommended_modalities,
+                "confidence_score": h.confidence_score,
+                "development_economics": h.development_economics,
+                "latam_relevance": h.latam_relevance,
+                "evidence_sources": h.evidence_sources,
+                "opentargets_hits": len(h.opentargets_associations),
+                "pubmed_abstracts": len(h.pubmed_abstracts),
+                "ai_analysis": h.ai_analysis,
+                "generated_at": h.generated_at,
+            }
+            for h in hypotheses
+        ],
+        "total_targets": len(hypotheses),
+        "note": "AI-generated hypotheses. Require experimental validation before clinical use.",
+    }
+
+
+@router.post("/drug/repurposing")
+async def find_repurposing_candidates(req: RepurposingRequest):
+    """
+    Drug Repurposing Signal Discovery.
+
+    Surfaces existing drugs with evidence for new LATAM disease indications.
+    Uses Open Targets drug→disease associations and curated LATAM repurposing signals.
+
+    High ROI: repurposed drugs skip Phase I safety studies (known safety profile),
+    reducing development cost from $2B → $300M and timeline from 12 → 6 years.
+    """
+    try:
+        candidates = await drug_discovery_engine.find_repurposing_candidates(
+            disease_area=req.disease_area,
+            existing_drug=req.existing_drug,
+            countries=req.countries or [],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Repurposing engine error: {e}")
+
+    return {
+        "disease_area": req.disease_area,
+        "candidates": [
+            {
+                "candidate_id": c.candidate_id,
+                "drug_name": c.drug_name,
+                "original_indication": c.original_indication,
+                "proposed_indication": c.proposed_indication,
+                "mechanism": c.mechanism,
+                "repurposing": c.repurposing,
+                "clinical_phase_original": c.clinical_phase_original,
+                "evidence_score": c.evidence_score,
+                "latam_markets": c.latam_markets,
+                "ai_rationale": c.ai_rationale,
+            }
+            for c in candidates
+        ],
+        "total_candidates": len(candidates),
+        "note": "Repurposing signals require clinical validation. Regulatory pathway varies by jurisdiction.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# International Regulatory Expansion
+# ---------------------------------------------------------------------------
+
+class InternationalExpansionRequest(BaseModel):
+    product_type: str = Field(..., description="small_molecule | biologic | SaMD | combination")
+    existing_approvals: list[str] = Field(
+        default_factory=list,
+        description="Already-approved authorities: anvisa | cofepris | invima | anmat | isp | fda | ema"
+    )
+    target_authorities: list[str] = Field(
+        ...,
+        description="Authorities to expand into: ema | pmda | mhra | tga | health_canada"
+    )
+    indication: str = Field(..., description="Therapeutic indication")
+    is_samd: bool = Field(False, description="True if Software as a Medical Device")
+
+
+@router.post("/regulatory/expand")
+async def analyze_international_expansion(req: InternationalExpansionRequest):
+    """
+    International Regulatory Gap Analysis.
+
+    Analyzes gaps between your existing LATAM approvals and target global markets.
+    Covers EMA (EU), PMDA (Japan), MHRA (UK), TGA (Australia), Health Canada.
+
+    Returns per-authority gap lists, required bridging studies, cost/timeline
+    estimates, and parallel submission strategy (Access Consortium work-sharing).
+
+    Strategic use: Phase 3 international expansion after LATAM revenue validates product.
+    Enterprise contract value: $500K–$2M/year per pharma partner.
+    """
+    valid_authorities = set(INTERNATIONAL_AUTHORITIES.keys())
+    invalid = [a for a in req.target_authorities if a.lower() not in valid_authorities]
+    if invalid:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown authorities: {invalid}. Valid: {sorted(valid_authorities)}",
+        )
+
+    try:
+        gaps = international_regulatory_engine.analyze_expansion(
+            product_type=req.product_type,
+            existing_approvals=req.existing_approvals,
+            target_authorities=req.target_authorities,
+            indication=req.indication,
+            is_samd=req.is_samd,
+        )
+        strategy = international_regulatory_engine.get_parallel_submission_strategy(
+            target_authorities=req.target_authorities,
+            product_type=req.product_type,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"International regulatory engine error: {e}")
+
+    return {
+        "product_type": req.product_type,
+        "indication": req.indication,
+        "existing_approvals": req.existing_approvals,
+        "gap_analyses": [
+            {
+                "authority": g.authority,
+                "authority_name": g.authority_name,
+                "region": g.region,
+                "recommended_pathway": g.recommended_pathway,
+                "gaps": g.gaps,
+                "required_studies": g.required_studies,
+                "estimated_bridging_cost_usd": g.estimated_bridging_cost_usd,
+                "estimated_timeline_months": g.estimated_timeline_months,
+                "parallel_submission_eligible": g.parallel_submission_eligible,
+                "applicable_ich_guidelines": g.applicable_ich_guidelines,
+                "expedited_programs": g.expedited_programs,
+            }
+            for g in gaps
+        ],
+        "parallel_submission_strategy": strategy,
+    }
+
+
+@router.get("/regulatory/authorities")
+async def get_international_authorities(authority: Optional[str] = None):
+    """
+    International regulatory authority registry.
+    Covers EMA, PMDA, MHRA, TGA, Health Canada with submission pathways and timelines.
+    """
+    if authority:
+        auth = INTERNATIONAL_AUTHORITIES.get(authority.lower())
+        if not auth:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown authority '{authority}'. Valid: {sorted(INTERNATIONAL_AUTHORITIES.keys())}",
+            )
+        return {authority.lower(): auth}
+    return INTERNATIONAL_AUTHORITIES
+
+
+@router.get("/regulatory/ich")
+async def get_ich_guidelines(authority: Optional[str] = None):
+    """
+    ICH guideline applicability matrix.
+    Returns which ICH guidelines (E3, E6, E2B, M4, etc.) apply to each authority.
+    """
+    if authority:
+        return {
+            "authority": authority,
+            "applicable_guidelines": international_regulatory_engine.get_ich_applicability(authority),
+        }
+    return {
+        "guidelines": ICH_GUIDELINES,
+        "note": "All major authorities (EMA, PMDA, MHRA, FDA, TGA, Health Canada) require ICH CTD format (M4)",
     }
