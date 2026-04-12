@@ -676,6 +676,18 @@ function ADMERow({ label, value, status }) {
    );
 }
 
+function EcosystemCard({ icon, label, status, color }) {
+  return (
+    <div className="glass-card p-3 flex items-center space-x-3">
+      <div className={`${color} opacity-80`}>{icon}</div>
+      <div>
+        <p className="text-[10px] text-slate-500 uppercase font-bold">{label}</p>
+        <p className="text-xs text-white font-semibold">{status}</p>
+      </div>
+    </div>
+  );
+}
+
 function BiometricsSimulator() {
   const canvasRef = useRef(null);
   useEffect(() => {
