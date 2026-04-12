@@ -1,13 +1,47 @@
+# Core API framework
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 websockets>=12.0
+sse-starlette>=2.1.0
 pydantic>=2.7.0
 pydantic-settings>=2.3.0
 httpx>=0.27.0
+aiofiles>=23.0.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
+
+# AI / LLM SDKs
 anthropic>=0.30.0
+openai>=1.30.0
 google-generativeai>=0.7.0
 google-genai>=1.0.0
-python-dotenv>=1.0.0
-chromadb>=0.5.0
-sse-starlette>=2.1.0
+
+# Data & ML
+numpy>=1.26.0
+pandas>=2.2.0
+scikit-learn>=1.4.0
+sentence-transformers>=3.0.0
+pillow>=10.0.0
+
+# Document processing
+pypdf>=4.0.0
 reportlab>=4.2.0
+
+# Vector DB / RAG
+chromadb>=0.5.0
+
+# Billing & payments
+stripe>=8.0.0
+
+# Auth & security
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+slowapi>=0.1.9
+
+# Observability
+prometheus-client>=0.20.0
+rich>=13.0.0
+
+# Utilities
+tenacity>=8.2.0
+typer>=0.12.0
