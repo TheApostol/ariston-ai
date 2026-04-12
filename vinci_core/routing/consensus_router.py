@@ -13,10 +13,10 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-import anthropic
 from config import settings
 
 from vinci_core.models.openrouter_model import OpenRouterModel
+from vinci_core.models.gemini_model import GeminiModel
 from vinci_core.utils.retry import async_retry
 
 logger = logging.getLogger("ariston.consensus")
@@ -29,11 +29,25 @@ _TIMEOUT_SECONDS = 60
 
 class ConsensusRouter:
     def __init__(self):
-        self.client = anthropic.AsyncAnthropic(
-            api_key=settings.ANTHROPIC_API_KEY,
-            timeout=_TIMEOUT_SECONDS,
-        )
+        self._client = None  # lazy-initialized
         self.arbiter = OpenRouterModel()
+        self.gemini = GeminiModel()
+
+    def _get_client(self):
+        if self._client is not None:
+            return self._client
+        api_key = settings.ANTHROPIC_API_KEY
+        if not api_key:
+            return None
+        try:
+            import anthropic  # lazy import
+            self._client = anthropic.AsyncAnthropic(
+                api_key=api_key,
+                timeout=_TIMEOUT_SECONDS,
+            )
+        except (ImportError, Exception) as e:
+            logger.warning("[consensus] anthropic client init failed: %s", e)
+        return self._client
 
     async def run(self, messages: List[Dict[str, Any]], prompt: str) -> Dict[str, Any]:
         """
@@ -47,12 +61,30 @@ class ConsensusRouter:
         user_msgs = [m for m in messages if m["role"] != "system"]
         system = "\n\n".join(system_parts) or None
 
-        @async_retry(max_attempts=2, base_delay=1.0, exceptions=(anthropic.APIStatusError, anthropic.APIConnectionError))
+        client = self._get_client()
+
+        # If no Anthropic client, fall straight through to Gemini consensus
+        if not client:
+            logger.warning("[consensus] no Anthropic client — delegating to Gemini")
+            try:
+                result = await self.gemini.generate(messages=messages)
+                result.setdefault("metadata", {})["consensus"] = False
+                result["metadata"]["provider"] = "google"
+                return result
+            except Exception as ge:
+                return {
+                    "model": "vinci-fallback",
+                    "content": "Clinical consensus unavailable — all providers failed.",
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "metadata": {"consensus": False, "error": True},
+                }
+
+        @async_retry(max_attempts=2, base_delay=1.0, exceptions=(Exception,))
         async def _call(model: str) -> str:
             kwargs: Dict[str, Any] = {"model": model, "max_tokens": _MAX_TOKENS, "messages": user_msgs}
             if system:
                 kwargs["system"] = system
-            r = await self.client.messages.create(**kwargs)
+            r = await client.messages.create(**kwargs)
             return r.content[0].text
 
         # Run Sonnet and Haiku in parallel
@@ -77,19 +109,25 @@ class ConsensusRouter:
             try:
                 sonnet_text = await _call(_SONNET)
             except Exception as fallback_exc:
-                logger.error(
-                    '{"event":"consensus_sonnet_fallback_failed","error":"%s"}',
+                logger.warning(
+                    '{"event":"consensus_sonnet_fallback_failed","error":"%s","trying":"gemini"}',
                     type(fallback_exc).__name__,
                 )
-                return {
-                    "model": _SONNET,
-                    "content": (
-                        "Clinical consensus service is temporarily unavailable. "
-                        "Please retry your query."
-                    ),
-                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-                    "metadata": {"consensus": False, "error": True},
-                }
+                try:
+                    result = await self.gemini.generate(messages=messages)
+                    result.setdefault("metadata", {})["consensus"] = False
+                    return result
+                except Exception as ge:
+                    logger.error('{"event":"consensus_all_failed","gemini_error":"%s"}', ge)
+                    return {
+                        "model": _SONNET,
+                        "content": (
+                            "Clinical consensus service is temporarily unavailable. "
+                            "Please retry your query."
+                        ),
+                        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                        "metadata": {"consensus": False, "error": True},
+                    }
 
         # If only Sonnet succeeded, return it directly without synthesis
         if not consensus_achieved or not haiku_text:

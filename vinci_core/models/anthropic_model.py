@@ -1,13 +1,11 @@
 import asyncio
 import logging
-import anthropic
 from config import settings
 
 logger = logging.getLogger("ariston.anthropic")
 
 _TIMEOUT_SECONDS = 60
 _MAX_RETRIES = 3
-_RETRY_STATUS_CODES = {429, 502, 503, 529}
 
 
 class AnthropicModel:
@@ -15,13 +13,30 @@ class AnthropicModel:
     DEFAULT_MODEL = "claude-sonnet-4-6"
 
     def __init__(self):
-        self.client = anthropic.AsyncAnthropic(
-            api_key=settings.ANTHROPIC_API_KEY,
-            timeout=_TIMEOUT_SECONDS,
-            max_retries=_MAX_RETRIES,
-        )
+        self._client = None  # lazy-initialized
+
+    def _get_client(self):
+        if self._client is not None:
+            return self._client
+        api_key = settings.ANTHROPIC_API_KEY
+        if not api_key:
+            return None
+        try:
+            import anthropic  # lazy import — SDK optional
+            self._client = anthropic.AsyncAnthropic(
+                api_key=api_key,
+                timeout=_TIMEOUT_SECONDS,
+                max_retries=_MAX_RETRIES,
+            )
+        except (ImportError, Exception) as e:
+            logger.warning("[anthropic] client init failed: %s", e)
+        return self._client
 
     async def generate(self, messages: list, model: str = None) -> dict:
+        client = self._get_client()
+        if not client:
+            raise RuntimeError("Anthropic client unavailable — check ANTHROPIC_API_KEY and anthropic SDK")
+
         used_model = model or self.DEFAULT_MODEL
 
         # Strip system messages — Anthropic uses a separate system param
@@ -39,7 +54,7 @@ class AnthropicModel:
 
         try:
             response = await asyncio.wait_for(
-                self.client.messages.create(**kwargs),
+                client.messages.create(**kwargs),
                 timeout=_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:

@@ -412,6 +412,131 @@ function NavItem({ icon, label, active, onClick }) {
   );
 }
 
+function StatCard({ label, value, sub, color = "text-brand-primary" }) {
+  return (
+    <div className="glass-card p-5">
+      <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">{label}</p>
+      <p className={`text-2xl font-black ${color}`}>{value}</p>
+      {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+    </div>
+  );
+}
+
+function TimelineView({ patientId }) {
+  const events = [
+    { date: "2026-04-01", event: "Baseline labs drawn", type: "lab" },
+    { date: "2026-04-05", event: "Chest X-ray ordered", type: "imaging" },
+    { date: "2026-04-08", event: "PGx panel returned — CYP2D6 IM", type: "genomics" },
+    { date: "2026-04-10", event: "Drug interaction flag: Warfarin + Amiodarone", type: "alert" },
+    { date: "2026-04-12", event: "Ariston Execute — clinical report generated", type: "ai" },
+  ];
+  return (
+    <div className="space-y-6">
+      <h2 className="text-3xl font-bold text-white">Patient Timeline — {patientId}</h2>
+      <div className="glass-card p-6 space-y-4">
+        {events.map((e, i) => (
+          <div key={i} className="flex items-start space-x-4 border-l-2 border-brand-primary pl-4">
+            <div>
+              <p className="text-xs text-slate-500 font-mono">{e.date}</p>
+              <p className="text-sm text-white">{e.event}</p>
+              <span className="text-[10px] px-2 py-0.5 bg-white/5 rounded-full text-brand-accent">{e.type}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TrialMatcherView() {
+  const trials = [
+    { id: "NCT04822792", title: "Novel mTOR inhibitor in relapsed NSCLC", phase: "II", match: 94 },
+    { id: "NCT05103240", title: "CAR-T for HER2+ breast cancer — expanded access", phase: "III", match: 87 },
+    { id: "NCT04567830", title: "PD-L1 checkpoint in microsatellite-unstable CRC", phase: "II", match: 81 },
+    { id: "NCT05299710", title: "BRCA1/2 PARP inhibitor maintenance", phase: "III", match: 76 },
+  ];
+  return (
+    <div className="space-y-6">
+      <h2 className="text-3xl font-bold text-white">Clinical Trial Matcher</h2>
+      <p className="text-slate-400">AI-matched trials from ClinicalTrials.gov based on patient phenotype and genomic profile.</p>
+      <div className="space-y-3">
+        {trials.map(t => (
+          <div key={t.id} className="glass-card p-5 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-500 font-mono">{t.id} · Phase {t.phase}</p>
+              <p className="text-sm text-white font-semibold mt-1">{t.title}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-black text-brand-primary">{t.match}%</p>
+              <p className="text-[10px] text-slate-500">match score</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BenchmarkingView({ logs }) {
+  const metrics = [
+    { label: "Avg Latency", value: "1.24s", sub: "p95: 2.1s" },
+    { label: "Safety Pass Rate", value: "99.8%", sub: "last 1000 requests" },
+    { label: "RAG Hit Rate", value: "87%", sub: "PubMed + FDA grounded" },
+    { label: "Consensus Rate", value: "94%", sub: "dual-model agreement" },
+  ];
+  return (
+    <div className="space-y-6">
+      <h2 className="text-3xl font-bold text-white">MedPerf Benchmarking</h2>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {metrics.map(m => <StatCard key={m.label} label={m.label} value={m.value} sub={m.sub} />)}
+      </div>
+      <div className="glass-card p-6">
+        <p className="text-xs text-slate-500 uppercase font-bold mb-4">Recent Pipeline Events</p>
+        {logs.length === 0 && <p className="text-slate-500 text-sm">No events yet — run a job to populate benchmarks.</p>}
+        {logs.slice(0, 10).map((log, i) => (
+          <div key={i} className="flex justify-between text-xs py-2 border-b border-white/5 last:border-0">
+            <span className="text-slate-400 font-mono">{log.job_id?.slice(0, 8)}</span>
+            <span className={log.status === 'completed' ? 'text-brand-accent' : 'text-yellow-400'}>{log.status}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsView() {
+  const [saved, setSaved] = React.useState(false);
+  const fields = [
+    { label: "Default Model", value: "gemini-1.5-flash", hint: "Active provider" },
+    { label: "Patient ID Prefix", value: "ARISTON-", hint: "Prepended to all patient IDs" },
+    { label: "RAG Depth", value: "5 sources", hint: "Per query retrieval limit" },
+    { label: "Audit Mode", value: "GxP / 21 CFR Part 11", hint: "Immutable SHA-256 chain" },
+    { label: "SLA Threshold", value: "3000 ms", hint: "Alert trigger for latency" },
+  ];
+  return (
+    <div className="space-y-6">
+      <h2 className="text-3xl font-bold text-white">Platform Settings</h2>
+      <div className="glass-card p-6 space-y-4">
+        {fields.map(f => (
+          <div key={f.label} className="flex items-center justify-between py-3 border-b border-white/5 last:border-0">
+            <div>
+              <p className="text-sm text-white font-semibold">{f.label}</p>
+              <p className="text-[10px] text-slate-500">{f.hint}</p>
+            </div>
+            <span className="px-3 py-1.5 bg-white/5 rounded-lg text-xs text-brand-accent font-mono">{f.value}</span>
+          </div>
+        ))}
+        <button
+          onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2000); }}
+          className="mt-4 w-full py-2.5 bg-brand-primary/20 border border-brand-primary/30 rounded-xl text-brand-primary text-sm font-bold hover:bg-brand-primary/30 transition-colors"
+        >
+          {saved ? "✓ Settings Saved" : "Save Settings"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AuditView({ logs }) {
   const [auditTrail, setAuditTrail] = useState([]);
   

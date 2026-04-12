@@ -15,6 +15,7 @@ Fallback chain: primary → OpenRouter → structured error response
 import logging
 from vinci_core.models.anthropic_model import AnthropicModel
 from vinci_core.models.openrouter_model import OpenRouterModel
+from vinci_core.models.gemini_model import GeminiModel
 from vinci_core.routing.consensus_router import ConsensusRouter
 from vinci_core.layers.base_layer import BaseLayer
 from vinci_core.layers.pharma_layer import PharmaLayer
@@ -29,6 +30,7 @@ class ModelRouter:
     def __init__(self):
         self.anthropic = AnthropicModel()
         self.openrouter = OpenRouterModel()
+        self.gemini = GeminiModel()
         self.consensus = ConsensusRouter()
 
         self.layers = {
@@ -46,10 +48,10 @@ class ModelRouter:
             "clinical":  "consensus",   # score: 10 — dual-model + arbiter
             "latam":     "anthropic",   # score: 8 — regulatory precision
             "pharma":    "anthropic",   # score: 8 — structured science
-            "data":      "anthropic",   # score: 7 — analysis tasks
-            "radiology": "anthropic",   # score: 7 — clinical precision
-            "base":      "openrouter",  # score: 3 — general purpose
-            "general":   "openrouter",  # score: 3 — general purpose
+            "data":      "gemini",      # score: 7 — analysis tasks
+            "radiology": "gemini",      # score: 7 — vision + clinical (Gemini multimodal)
+            "base":      "gemini",      # score: 5 — general purpose
+            "general":   "gemini",      # score: 5 — general purpose
         }
 
     def _select_model(self, layer: str, override: str = None) -> str:
@@ -76,6 +78,8 @@ class ModelRouter:
                 result = await self.consensus.run(messages=messages, prompt=prompt)
             elif effective_model == "anthropic":
                 result = await self.anthropic.generate(messages=messages)
+            elif effective_model == "gemini":
+                result = await self.gemini.generate(messages=messages)
             else:
                 result = await self.openrouter.generate(messages=messages)
 
@@ -90,17 +94,23 @@ class ModelRouter:
                 result.setdefault("metadata", {})["fallback_used"] = True
                 result["metadata"]["fallback_reason"] = str(e)
             except Exception as fe:
-                logger.error("[Router] request_id=%s OpenRouter fallback also failed: %s", request_id, fe)
-                return {
-                    "model": "vinci-fallback",
-                    "content": "All providers unavailable. Please retry.",
-                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-                    "metadata": {
-                        "error": True,
-                        "fallback_used": True,
-                        "fallback_reason": f"Primary: {e} | OpenRouter: {fe}",
-                    },
-                }
+                logger.warning("[Router] OpenRouter also failed, fallback→Gemini: %s", fe)
+                try:
+                    result = await self.gemini.generate(messages=messages)
+                    result.setdefault("metadata", {})["fallback_used"] = True
+                    result["metadata"]["fallback_reason"] = f"Primary: {e} | OpenRouter: {fe}"
+                except Exception as ge:
+                    logger.error("[Router] All providers failed. Gemini: %s", ge)
+                    return {
+                        "model": "vinci-fallback",
+                        "content": "All providers unavailable. Please retry.",
+                        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                        "metadata": {
+                            "error": True,
+                            "fallback_used": True,
+                            "fallback_reason": f"Anthropic: {e} | OpenRouter: {fe} | Gemini: {ge}",
+                        },
+                    }
 
         result.setdefault("metadata", {})
         result["metadata"]["fallback_used"] = fallback_used

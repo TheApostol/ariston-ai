@@ -18,7 +18,7 @@ from vinci_core.utils.retry import async_retry
 
 logger = logging.getLogger("ariston.providers.gemini")
 
-_DEFAULT_MODEL = "gemini-1.5-flash"
+_DEFAULT_MODEL = "gemini-2.0-flash"
 _TIMEOUT_SECONDS = 45
 
 
@@ -38,7 +38,6 @@ class GeminiModel(BaseModel):
             logger.warning("[gemini] client init failed: %s", e)
         return self._client
 
-    @async_retry(max_attempts=3, base_delay=1.5, exceptions=(Exception,))
     async def generate(
         self,
         messages: Optional[List[Dict[str, str]]] = None,
@@ -53,7 +52,6 @@ class GeminiModel(BaseModel):
         Runs the synchronous SDK call in a thread pool to avoid blocking the event loop.
         """
         if messages:
-            # Flatten messages into a single content string for Gemini
             content = "\n\n".join(
                 f"[{m['role'].upper()}] {m['content']}" for m in messages
             )
@@ -65,7 +63,12 @@ class GeminiModel(BaseModel):
         target_model = model or _DEFAULT_MODEL
         client = self._get_client()
         if not client:
-            return {"model": target_model, "content": "[Gemini unavailable — check GEMINI_API_KEY]", "usage": {}, "metadata": {"provider": "google", "error": "no_client"}}
+            return {
+                "model": target_model,
+                "content": "[Gemini unavailable — check GEMINI_API_KEY]",
+                "usage": {},
+                "metadata": {"provider": "google", "error": "no_client"},
+            }
 
         logger.debug("[gemini] calling model=%s content_len=%d", target_model, len(content))
 
@@ -79,6 +82,22 @@ class GeminiModel(BaseModel):
             )
         except asyncio.TimeoutError as exc:
             raise TimeoutError(f"Gemini request timed out after {_TIMEOUT_SECONDS}s") from exc
+        except Exception as exc:
+            err_str = str(exc)
+            # Quota exhausted — return graceful degradation instead of raising
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                logger.warning("[gemini] quota exhausted: %s", err_str[:120])
+                return {
+                    "model": target_model,
+                    "content": (
+                        "[Ariston AI — Gemini quota exhausted for today's free tier. "
+                        "The platform is operational; live AI analysis will resume when quota resets. "
+                        "Set ANTHROPIC_API_KEY for immediate Claude-powered analysis.]"
+                    ),
+                    "usage": {},
+                    "metadata": {"provider": "google", "error": "quota_exhausted"},
+                }
+            raise
 
         # Normalize usage — Gemini may not always expose token counts
         usage_meta = getattr(response, "usage_metadata", None)

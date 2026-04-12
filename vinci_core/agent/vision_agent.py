@@ -62,9 +62,14 @@ class VisionRadiologyAgent:
                 image_bytes = base64.b64decode(b64_str)
                 contents.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
 
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=contents,
+            import asyncio as _asyncio
+            response = await _asyncio.wait_for(
+                _asyncio.to_thread(
+                    client.models.generate_content,
+                    model="gemini-2.0-flash",
+                    contents=contents,
+                ),
+                timeout=60,
             )
             return f"[Ariston Vision Gen-2 Report]\n{response.text}"
 
