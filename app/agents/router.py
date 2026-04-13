@@ -28,6 +28,7 @@ from vinci_core.agent.regulatory_agent import regulatory_copilot
 from vinci_core.agent.patient_agent import patient_agent
 from vinci_core.agent.pv_narrative_agent import pv_narrative_agent
 from vinci_core.agent.site_selection_agent import site_selection_agent
+from vinci_core.agent.self_improvement_agent import self_improvement_agent
 def _get_pharmacist():
     from vinci_core.agent.pharmacist_agent import PharmacistAgent
     return PharmacistAgent()
@@ -433,6 +434,51 @@ async def vision_analyze(request: VisionAnalyzeRequest):
         images=request.images or [],
     )
     return {"analysis": result, "agent": "vision_radiology"}
+
+
+# ── Self-Improvement Agent ────────────────────────────────────────────────────
+
+class ApplySuggestionRequest(BaseModel):
+    suggestion_id: int
+    prompt_template_key: Optional[str] = None
+
+
+@router.post("/self-improve")
+async def trigger_self_improvement():
+    """
+    Trigger one self-improvement cycle.
+
+    Reads the last 100 audit trail entries, identifies patterns (slow jobs,
+    safety failures, frequent query topics), generates improvement suggestions
+    via Claude Haiku, and stores them in the improvement_log table.
+    """
+    result = await self_improvement_agent.run_cycle()
+    return result
+
+
+@router.get("/self-improve/report")
+async def self_improvement_report():
+    """
+    Return the last 10 improvement suggestions from the improvement_log table.
+    """
+    suggestions = self_improvement_agent.get_report(limit=10)
+    return {
+        "total": len(suggestions),
+        "suggestions": suggestions,
+    }
+
+
+@router.post("/self-improve/apply")
+async def apply_improvement(request: ApplySuggestionRequest):
+    """
+    Mark a suggestion as applied and optionally record which prompt template
+    was targeted.
+    """
+    result = self_improvement_agent.apply_suggestion(
+        suggestion_id=request.suggestion_id,
+        prompt_template_key=request.prompt_template_key,
+    )
+    return result
 
 
 # ── Full Platform Agent Status ────────────────────────────────────────────────

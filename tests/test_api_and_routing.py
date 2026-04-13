@@ -119,12 +119,12 @@ async def test_router_primary_succeeds():
     from vinci_core.routing.model_router import ModelRouter
     router = ModelRouter()
     mock_result = {
-        "model": "gemini-2.0-flash",
+        "model": "claude-sonnet-4-6",
         "content": "ok",
         "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
-        "metadata": {"provider": "google"},
+        "metadata": {"provider": "anthropic"},
     }
-    with patch.object(router.gemini, "generate", new_callable=AsyncMock, return_value=mock_result):
+    with patch.object(router.anthropic, "generate", new_callable=AsyncMock, return_value=mock_result):
         result = await router.run(prompt="hello", layer="base")
     assert result["metadata"]["fallback_used"] is False
 

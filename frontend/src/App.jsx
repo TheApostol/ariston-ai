@@ -32,6 +32,10 @@ function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [providerStatus, setProviderStatus] = useState(null);
+  const [streamingContent, setStreamingContent] = useState('');
+  const [streamingJobId, setStreamingJobId] = useState(null);
+  const streamIntervalRef = useRef(null);
   const ws = useRef(null);
 
   // Initialize WebSocket for Real-time Updates
@@ -43,23 +47,31 @@ function App() {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    
+
     const clientId = `client_${Math.random().toString(36).substr(2, 9)}`;
     ws.current = new WebSocket(`${WS_BASE}/${clientId}`);
-    
+
     ws.current.onmessage = (event) => {
       const update = JSON.parse(event.data);
       setWsLogs(prev => [update, ...prev].slice(0, 50));
-      
+
       // Update job status in state
-      setJobs(prev => prev.map(job => 
-        job.job_id === update.job_id 
-          ? { ...job, status: update.status, result: update.data } 
+      setJobs(prev => prev.map(job =>
+        job.job_id === update.job_id
+          ? { ...job, status: update.status, result: update.data }
           : job
       ));
     };
 
-    return () => ws.current.close();
+    // Fetch provider status on mount
+    axios.get(`${API_BASE}/providers/status`)
+      .then(r => setProviderStatus(r.data))
+      .catch(() => setProviderStatus(null));
+
+    return () => {
+      ws.current.close();
+      if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
+    };
   }, []);
 
   const fileToBase64 = (file) => new Promise((resolve, reject) => {
@@ -133,7 +145,7 @@ function App() {
       return;
     }
 
-    // Text only → async orchestration, result via WebSocket
+    // Text only → async orchestration, result via polling
     try {
       const response = await axios.post(`${API_BASE}/orchestrate`, {
         prompt: prompt.trim(),
@@ -141,13 +153,51 @@ function App() {
         use_rag: true,
         context: {},
       });
+      const jobId = response.data.job_id;
       setJobs(prev => [{
-        job_id: response.data.job_id,
+        job_id: jobId,
         status: 'accepted',
         prompt: prompt.trim(),
         timestamp: new Date().toISOString(),
       }, ...prev]);
       setPrompt('');
+      setStreamingContent('');
+      setStreamingJobId(jobId);
+
+      // Poll every 1.5s and stream content word-by-word
+      let displayedWords = 0;
+      if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
+      streamIntervalRef.current = setInterval(async () => {
+        try {
+          const jobRes = await axios.get(`${API_BASE}/jobs/${jobId}`);
+          const jobData = jobRes.data;
+          const content = jobData?.result?.content || jobData?.content || '';
+
+          // Stream content word-by-word
+          const words = content.split(' ');
+          if (words.length > displayedWords) {
+            displayedWords = Math.min(displayedWords + 3, words.length);
+            setStreamingContent(words.slice(0, displayedWords).join(' '));
+          }
+
+          // Update job in list
+          if (jobData.status === 'completed' || jobData.status === 'failed') {
+            setJobs(prev => prev.map(j =>
+              j.job_id === jobId
+                ? { ...j, status: jobData.status, result: jobData.result || jobData }
+                : j
+            ));
+            if (jobData.status === 'completed') {
+              setStreamingContent(content); // show full content
+              setSelectedJob({ job_id: jobId, status: 'completed', result: jobData.result || jobData, prompt: prompt.trim() });
+            }
+            clearInterval(streamIntervalRef.current);
+            setStreamingJobId(null);
+          }
+        } catch (_) {
+          // silently ignore poll errors
+        }
+      }, 1500);
     } catch (err) {
       const msg = err.response?.data?.detail || err.message || 'Execution failed';
       setSubmitError(msg);
@@ -201,6 +251,9 @@ function App() {
         <div className="max-w-6xl mx-auto">
           {activeTab === 'orchestrator' && (
             <div className="space-y-8">
+               {/* Provider Status Bar */}
+               <ProviderStatusBar status={providerStatus} />
+
                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                   <EcosystemCard icon={<Database size={16} />} label="OpenFDA" status="Connected" color="text-brand-primary" />
                   <EcosystemCard icon={<FileText size={16} />} label="ClinicalTrials" status="Active" color="text-brand-secondary" />
@@ -314,6 +367,25 @@ function App() {
                   </div>
                </section>
 
+               {/* Streaming Result Panel */}
+               {(streamingContent || streamingJobId) && (
+                 <section className="glass-card p-6 border border-brand-primary/20">
+                   <div className="flex items-center justify-between mb-4">
+                     <div className="flex items-center space-x-2">
+                       <Activity className={`w-4 h-4 ${streamingJobId ? 'animate-pulse text-brand-primary' : 'text-brand-accent'}`} />
+                       <span className="text-sm font-bold text-white">
+                         {streamingJobId ? 'Streaming Output...' : 'Completed'}
+                       </span>
+                     </div>
+                     <CopyButton text={streamingContent} label="Copy Report" />
+                   </div>
+                   <div className="text-slate-300 text-sm leading-relaxed font-mono whitespace-pre-wrap max-h-64 overflow-y-auto">
+                     {streamingContent}
+                     {streamingJobId && <span className="animate-pulse text-brand-primary">▌</span>}
+                   </div>
+                 </section>
+               )}
+
                {/* Job Monitor */}
                <section className="space-y-4">
                   <h2 className="text-xl font-bold flex items-center space-x-2">
@@ -323,7 +395,7 @@ function App() {
                   <div className="grid grid-cols-1 gap-4">
                     <AnimatePresence>
                       {jobs.map((job) => (
-                        <motion.div 
+                        <motion.div
                           key={job.job_id}
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
@@ -334,7 +406,7 @@ function App() {
                               {job.status === 'completed' ? <ShieldCheck /> : <Activity className="animate-pulse" />}
                             </div>
                             <div>
-                               <p className="font-medium text-slate-100">{job.prompt.slice(0, 60)}...</p>
+                               <p className="font-medium text-slate-100">{job.prompt?.slice(0, 60)}...</p>
                                <div className="flex items-center space-x-2 mt-1">
                                   <p className={`text-xs uppercase tracking-widest ${job.status === 'failed' ? 'text-medical-red' : 'text-slate-500'}`}>
                                     {job.status} • {job.job_id.slice(0, 8)}
@@ -399,7 +471,7 @@ function App() {
 
 function NavItem({ icon, label, active, onClick }) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
         active ? 'bg-brand-primary/10 text-brand-primary' : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
@@ -409,6 +481,67 @@ function NavItem({ icon, label, active, onClick }) {
       <span className="font-medium">{label}</span>
       {active && <motion.div layoutId="nav-active" className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-primary" />}
     </button>
+  );
+}
+
+function CopyButton({ text, label = 'Copy' }) {
+  const [copied, setCopied] = React.useState(false);
+  const handleCopy = () => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      disabled={!text}
+      className="flex items-center space-x-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      <FileText size={11} />
+      <span>{copied ? 'Copied!' : label}</span>
+    </button>
+  );
+}
+
+function ProviderStatusBar({ status }) {
+  if (!status) return null;
+
+  const providerConfig = [
+    { key: 'anthropic',  label: 'Anthropic',  model: status?.anthropic?.model || 'claude-sonnet-4-6' },
+    { key: 'gemini',     label: 'Gemini',      model: status?.gemini?.model || 'gemini-2.0-flash' },
+    { key: 'openai',     label: 'OpenAI',      model: 'gpt-4o-mini' },
+    { key: 'openrouter', label: 'OpenRouter',  model: 'auto' },
+  ];
+
+  const getIndicator = (s) => {
+    if (!s) return { dot: 'bg-slate-600', text: 'text-slate-500', label: 'Unknown' };
+    switch (s.status) {
+      case 'live':            return { dot: 'bg-green-400',  text: 'text-green-400',  label: 'Live' };
+      case 'quota_exhausted': return { dot: 'bg-yellow-400', text: 'text-yellow-400', label: 'Quota' };
+      case 'invalid_key':
+      case 'no_key':          return { dot: 'bg-red-500',    text: 'text-red-500',    label: 'Invalid key' };
+      case 'timeout':         return { dot: 'bg-orange-400', text: 'text-orange-400', label: 'Timeout' };
+      default:                return { dot: 'bg-slate-500',  text: 'text-slate-400',  label: s.status || 'Unknown' };
+    }
+  };
+
+  return (
+    <div className="flex items-center space-x-3 px-4 py-2.5 bg-white/3 border border-white/5 rounded-xl">
+      <span className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mr-2 whitespace-nowrap">Providers</span>
+      {providerConfig.map(({ key, label }) => {
+        const s = status[key];
+        const ind = getIndicator(s);
+        return (
+          <div key={key} className="flex items-center space-x-1.5">
+            <div className={`w-2 h-2 rounded-full ${ind.dot} flex-shrink-0`} />
+            <span className={`text-[10px] font-semibold ${ind.text}`}>{label}:</span>
+            <span className="text-[10px] text-slate-400">{ind.label}</span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -677,9 +810,12 @@ function VisionView({ job, onBack }) {
               {/* Vision analysis */}
               {job.result?.vision_analysis && (
                 <div className="glass-card p-5 border-l-4 border-brand-accent">
-                  <h3 className="text-sm font-bold mb-3 flex items-center gap-2 text-brand-accent">
-                    <Eye size={14} /> Vision Analysis (Gemini 2.0 Flash)
-                  </h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-bold flex items-center gap-2 text-brand-accent">
+                      <Eye size={14} /> Vision Analysis (Gemini 2.0 Flash)
+                    </h3>
+                    <CopyButton text={job.result.vision_analysis} label="Copy" />
+                  </div>
                   <div className="text-slate-300 text-xs leading-relaxed max-h-48 overflow-y-auto pr-2 whitespace-pre-wrap font-mono">
                     {job.result.vision_analysis}
                   </div>
@@ -688,9 +824,12 @@ function VisionView({ job, onBack }) {
 
               {/* AI clinical report */}
               <div className="glass-card p-5 border-l-4 border-brand-primary">
-                <h3 className="text-sm font-bold mb-3 flex items-center gap-2">
-                  <FileText size={14} className="text-brand-primary" /> Clinical Report (RAG-Grounded)
-                </h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold flex items-center gap-2">
+                    <FileText size={14} className="text-brand-primary" /> Clinical Report (RAG-Grounded)
+                  </h3>
+                  <CopyButton text={job.result?.content} label="Copy Report" />
+                </div>
                 <div className="text-slate-300 text-sm leading-relaxed max-h-64 overflow-y-auto pr-2">
                   {job.result?.content
                     ? job.result.content.split('\n').map((line, i) => <p key={i} className="mb-1">{line}</p>)

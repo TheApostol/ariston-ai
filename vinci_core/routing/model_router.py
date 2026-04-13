@@ -47,13 +47,13 @@ class ModelRouter:
 
         # Scoring: higher = more capable/expensive provider used
         self.layer_model_map = {
-            "clinical":  "consensus",   # score: 10 — dual-model + arbiter
-            "latam":     "anthropic",   # score: 8 — regulatory precision
-            "pharma":    "anthropic",   # score: 8 — structured science
-            "data":      "openai",      # score: 7 — analysis tasks (GPT-4o-mini)
-            "radiology": "gemini",      # score: 7 — vision + clinical (Gemini multimodal)
-            "base":      "gemini",      # score: 5 — general purpose
-            "general":   "gemini",      # score: 5 — general purpose
+            "clinical":  "consensus",   # score: 10 — dual-model consensus (Sonnet + Haiku)
+            "latam":     "anthropic",   # score: 8 — regulatory precision (Sonnet)
+            "pharma":    "anthropic",   # score: 8 — structured science (Sonnet)
+            "data":      "anthropic",   # score: 7 — analysis (Sonnet, OpenAI fallback)
+            "radiology": "anthropic",   # score: 7 — clinical precision (Sonnet, Gemini vision fallback)
+            "base":      "anthropic",   # score: 5 — general purpose
+            "general":   "anthropic",   # score: 5 — general purpose
         }
 
     def _select_model(self, layer: str, override: str = None) -> str:

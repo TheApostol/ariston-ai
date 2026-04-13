@@ -1,5 +1,6 @@
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
 
 import os
 os.makedirs("data", exist_ok=True)
@@ -19,6 +20,7 @@ from app.api.v1.endpoints.phase5 import router as phase5_router
 from app.api.v1.endpoints.phase6 import router as phase6_router
 from app.api.v1.endpoints.platform import router as platform_router
 from app.api.v1.endpoints.billing import router as billing_router
+from app.api.v1.endpoints.providers import router as providers_router
 from app.localization.router import router as localization_router
 from vinci_core.continuous_improvement.router import router as improvement_router
 from app.pilot_programs.router import router as pilots_router
@@ -28,7 +30,7 @@ from vinci_core.rwe.router import router as rwe_router
 
 app = FastAPI(
     title="Ariston AI — Life Sciences Platform",
-    version="0.7.0",
+    version="0.8.0",
     description=(
         "AI OS layer for Life Sciences. "
         "Phase 1: LATAM regulatory intelligence (ANVISA/COFEPRIS/INVIMA/ANMAT/ISP). "
@@ -82,13 +84,16 @@ app.include_router(billing_router, prefix="/api/v1")
 # ── Platform: Autonomous Continuous Improvement Loop ──────────────────────
 app.include_router(improvement_router, prefix="/api/v1")
 
+# ── Provider Status ────────────────────────────────────────────────────────
+app.include_router(providers_router, prefix="/api/v1")
+
 
 @app.get("/health")
 async def health():
     return {
         "status": "ok",
         "platform": "Ariston AI",
-        "version": "0.7.0",
+        "version": "0.8.0",
         "roadmap": {
             "phase1": {
                 "status": "active",

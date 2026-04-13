@@ -30,28 +30,28 @@ def test_pharma_layer_uses_anthropic():
     assert strategy == "anthropic"
 
 
-def test_data_layer_uses_openai():
+def test_data_layer_uses_anthropic():
     router = ModelRouter()
     strategy = router.layer_model_map.get("data")
-    assert strategy == "openai"
+    assert strategy == "anthropic"
 
 
-def test_radiology_layer_uses_gemini():
+def test_radiology_layer_uses_anthropic():
     router = ModelRouter()
     strategy = router.layer_model_map.get("radiology")
-    assert strategy == "gemini"
+    assert strategy == "anthropic"
 
 
-def test_general_layer_uses_gemini():
+def test_general_layer_uses_anthropic():
     router = ModelRouter()
     strategy = router.layer_model_map.get("general")
-    assert strategy == "gemini"
+    assert strategy == "anthropic"
 
 
-def test_base_layer_uses_gemini():
+def test_base_layer_uses_anthropic():
     router = ModelRouter()
     strategy = router.layer_model_map.get("base")
-    assert strategy == "gemini"
+    assert strategy == "anthropic"
 
 
 def test_all_layers_have_model_map():

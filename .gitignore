@@ -41,3 +41,12 @@ Thumbs.db
 
 # Logs
 *.log
+__pycache__/
+*.pyc
+# Python cache (ensure excluded)
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.env
+.env.*
+!.env.example
