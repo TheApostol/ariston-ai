@@ -5754,3 +5754,5 @@
 {"timestamp": "2026-04-12T21:09:15.057808+00:00", "layer": "general", "safety_flag": "SAFE", "metrics": {"grounding_score": 0.75, "safety_score": 1.0, "hallucination_risk": 0.4, "rag_used": false, "consensus": false}}
 {"timestamp": "2026-04-12T21:09:52.175740+00:00", "layer": "clinical", "safety_flag": "SAFE", "metrics": {"grounding_score": 0.75, "safety_score": 1.0, "hallucination_risk": 0.4, "rag_used": false, "consensus": false}}
 {"timestamp": "2026-04-12T21:13:01.389793+00:00", "layer": "radiology", "safety_flag": "SAFE", "metrics": {"grounding_score": 0.75, "safety_score": 1.0, "hallucination_risk": 0.2, "rag_used": true, "consensus": false}}
+{"timestamp": "2026-04-12T21:21:50.084591+00:00", "layer": "general", "safety_flag": "SAFE", "metrics": {"grounding_score": 0.75, "safety_score": 1.0, "hallucination_risk": 0.4, "rag_used": false, "consensus": false}}
+{"timestamp": "2026-04-13T02:21:57.656182+00:00", "layer": "pharma", "safety_flag": "SAFE", "metrics": {"grounding_score": 0.75, "safety_score": 1.0, "hallucination_risk": 0.4, "rag_used": false, "consensus": false}}
